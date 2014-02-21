@@ -20,17 +20,6 @@
     - added support for automated testing and comparison to a reference value.
 */
 
-// OpenGL Graphics includes
-#include <GL/glew.h>
-#if defined (_WIN32)
-#include <GL/wglew.h>
-#endif
-#if defined(__APPLE__) || defined(__MACOSX)
-#include <GLUT/glut.h>
-#else
-#include <GL/freeglut.h>
-#endif
-
 // CUDA runtime
 #include <cuda_runtime.h>
 
@@ -46,8 +35,6 @@
 #include <algorithm>
 
 #include "particleSystem.h"
-#include "render_particles.h"
-#include "paramgl.h"
 
 #define MAX_EPSILON_ERROR 5.00
 #define THRESHOLD         0.30
@@ -56,28 +43,6 @@
 #define NUM_PARTICLES   16384
 
 const uint width = 640, height = 480;
-
-// view params
-int ox, oy;
-int buttonState = 0;
-double camera_trans[] = {0, 0, -3};
-double camera_rot[]   = {0, 0, 0};
-double camera_trans_lag[] = {0, 0, -3};
-double camera_rot_lag[] = {0, 0, 0};
-const double inertia = 0.1;
-ParticleRenderer::DisplayMode displayMode = ParticleRenderer::PARTICLE_SPHERES;
-
-int mode = 0;
-bool displayEnabled = true;
-bool bPause = false;
-bool displaySliders = false;
-bool wireframe = false;
-bool demoMode = false;
-int idleCounter = 0;
-int demoCounter = 0;
-const int idleDelay = 2000;
-
-enum { M_VIEW = 0, M_MOVE };
 
 uint numParticles = 0;
 uint3 gridSize;
@@ -97,20 +62,7 @@ double collideAttraction = 0.0;
 
 ParticleSystem *psystem = 0;
 
-// fps
-static int fpsCount = 0;
-static int fpsLimit = 1;
-StopWatchInterface *timer = NULL;
-
-ParticleRenderer *renderer = 0;
-
-double modelView[16];
-
-ParamListGL *params;
-
 // Auto-Verification Code
-const int frameCheckNumber = 4;
-unsigned int frameCount = 0;
 unsigned int g_TotalErrors = 0;
 char        *g_refFile = NULL;
 
@@ -139,38 +91,6 @@ void initParticleSystem(int numParticles, uint3 gridSize, bool bUseOpenGL)
 void cleanup()
 {
     sdkDeleteTimer(&timer);
-}
-
-// initialize OpenGL
-void initGL(int *argc, char **argv)
-{
-    glutInit(argc, argv);
-    glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
-    glutInitWindowSize(width, height);
-    glutCreateWindow("CUDA Particles");
-
-    glewInit();
-
-    if (!glewIsSupported("GL_VERSION_2_0 GL_VERSION_1_5 GL_ARB_multitexture GL_ARB_vertex_buffer_object"))
-    {
-        fprintf(stderr, "Required OpenGL extensions missing.");
-        exit(EXIT_FAILURE);
-    }
-
-#if defined (_WIN32)
-
-    if (wglewIsSupported("WGL_EXT_swap_control"))
-    {
-        // disable vertical sync
-        wglSwapIntervalEXT(0);
-    }
-
-#endif
-
-    glEnable(GL_DEPTH_TEST);
-    glClearColor(0.25, 0.25, 0.25, 1.0);
-
-    glutReportErrors();
 }
 
 void runBenchmark(int iterations, char *exec_path)
@@ -208,416 +128,9 @@ void runBenchmark(int iterations, char *exec_path)
     }
 }
 
-void computeFPS()
-{
-    frameCount++;
-    fpsCount++;
-
-    if (fpsCount == fpsLimit)
-    {
-        char fps[256];
-        double ifps = 1.0 / (sdkGetAverageTimerValue(&timer) / 1000.0);
-        sprintf(fps, "CUDA Particles (%d particles): %3.1f fps", numParticles, ifps);
-
-        glutSetWindowTitle(fps);
-        fpsCount = 0;
-
-        fpsLimit = (int)MAX(ifps, 1.0);
-        sdkResetTimer(&timer);
-    }
-}
-
-void display()
-{
-    sdkStartTimer(&timer);
-
-    // update the simulation
-    if (!bPause)
-    {
-        psystem->setIterations(iterations);
-        psystem->setDamping(damping);
-        psystem->setGravity(-gravity);
-        psystem->setCollideSpring(collideSpring);
-        psystem->setCollideDamping(collideDamping);
-        psystem->setCollideShear(collideShear);
-        psystem->setCollideAttraction(collideAttraction);
-
-        psystem->update(timestep);
-
-        if (renderer)
-        {
-            renderer->setVertexBuffer(psystem->getCurrentReadBuffer(), psystem->getNumParticles());
-        }
-    }
-
-    // render
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // view transform
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-
-    for (int c = 0; c < 3; ++c)
-    {
-        camera_trans_lag[c] += (camera_trans[c] - camera_trans_lag[c]) * inertia;
-        camera_rot_lag[c] += (camera_rot[c] - camera_rot_lag[c]) * inertia;
-    }
-
-    glTranslatef(camera_trans_lag[0], camera_trans_lag[1], camera_trans_lag[2]);
-    glRotatef(camera_rot_lag[0], 1.0, 0.0, 0.0);
-    glRotatef(camera_rot_lag[1], 0.0, 1.0, 0.0);
-
-    glGetDoublev(GL_MODELVIEW_MATRIX, modelView);
-
-    // cube
-    glColor3f(1.0, 1.0, 1.0);
-    glutWireCube(2.0);
-
-    // collider
-    glPushMatrix();
-    double3 p = psystem->getColliderPos();
-    glTranslatef(p.x, p.y, p.z);
-    glColor3f(1.0, 0.0, 0.0);
-    glutSolidSphere(psystem->getColliderRadius(), 20, 10);
-    glPopMatrix();
-
-    if (renderer && displayEnabled)
-    {
-        renderer->display(displayMode);
-    }
-
-    if (displaySliders)
-    {
-        glDisable(GL_DEPTH_TEST);
-        glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO); // invert color
-        glEnable(GL_BLEND);
-        params->Render(0, 0);
-        glDisable(GL_BLEND);
-        glEnable(GL_DEPTH_TEST);
-    }
-
-    sdkStopTimer(&timer);
-
-    glutSwapBuffers();
-    glutReportErrors();
-
-    computeFPS();
-}
-
 inline double frand()
 {
     return rand() / (double) RAND_MAX;
-}
-
-void addSphere()
-{
-    // inject a sphere of particles
-    double pr = psystem->getParticleRadius();
-    double tr = pr+(pr*2.0)*ballr;
-    double pos[4], vel[4];
-    pos[0] = -1.0 + tr + frand()*(2.0 - tr*2.0);
-    pos[1] = 1.0 - tr;
-    pos[2] = -1.0 + tr + frand()*(2.0 - tr*2.0);
-    pos[3] = 0.0;
-    vel[0] = vel[1] = vel[2] = vel[3] = 0.0;
-    psystem->addSphere(0, pos, vel, ballr, pr*2.0);
-}
-
-void reshape(int w, int h)
-{
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(60.0, (double) w / (double) h, 0.1, 100.0);
-
-    glMatrixMode(GL_MODELVIEW);
-    glViewport(0, 0, w, h);
-
-    if (renderer)
-    {
-        renderer->setWindowSize(w, h);
-        renderer->setFOV(60.0);
-    }
-}
-
-void mouse(int button, int state, int x, int y)
-{
-    int mods;
-
-    if (state == GLUT_DOWN)
-    {
-        buttonState |= 1<<button;
-    }
-    else if (state == GLUT_UP)
-    {
-        buttonState = 0;
-    }
-
-    mods = glutGetModifiers();
-
-    if (mods & GLUT_ACTIVE_SHIFT)
-    {
-        buttonState = 2;
-    }
-    else if (mods & GLUT_ACTIVE_CTRL)
-    {
-        buttonState = 3;
-    }
-
-    ox = x;
-    oy = y;
-
-    demoMode = false;
-    idleCounter = 0;
-
-    if (displaySliders)
-    {
-        if (params->Mouse(x, y, button, state))
-        {
-            glutPostRedisplay();
-            return;
-        }
-    }
-
-    glutPostRedisplay();
-}
-
-// transfrom vector by matrix
-void xform(double *v, double *r, GLdouble *m)
-{
-    r[0] = v[0]*m[0] + v[1]*m[4] + v[2]*m[8] + m[12];
-    r[1] = v[0]*m[1] + v[1]*m[5] + v[2]*m[9] + m[13];
-    r[2] = v[0]*m[2] + v[1]*m[6] + v[2]*m[10] + m[14];
-}
-
-// transform vector by transpose of matrix
-void ixform(double *v, double *r, GLdouble *m)
-{
-    r[0] = v[0]*m[0] + v[1]*m[1] + v[2]*m[2];
-    r[1] = v[0]*m[4] + v[1]*m[5] + v[2]*m[6];
-    r[2] = v[0]*m[8] + v[1]*m[9] + v[2]*m[10];
-}
-
-void ixformPoint(double *v, double *r, GLdouble *m)
-{
-    double x[4];
-    x[0] = v[0] - m[12];
-    x[1] = v[1] - m[13];
-    x[2] = v[2] - m[14];
-    x[3] = 1.0f;
-    ixform(x, r, m);
-}
-
-void motion(int x, int y)
-{
-    double dx, dy;
-    dx = (double)(x - ox);
-    dy = (double)(y - oy);
-
-    if (displaySliders)
-    {
-        if (params->Motion(x, y))
-        {
-            ox = x;
-            oy = y;
-            glutPostRedisplay();
-            return;
-        }
-    }
-
-    switch (mode)
-    {
-        case M_VIEW:
-            if (buttonState == 3)
-            {
-                // left+middle = zoom
-                camera_trans[2] += (dy / 100.0) * 0.5 * fabs(camera_trans[2]);
-            }
-            else if (buttonState & 2)
-            {
-                // middle = translate
-                camera_trans[0] += dx / 100.0;
-                camera_trans[1] -= dy / 100.0;
-            }
-            else if (buttonState & 1)
-            {
-                // left = rotate
-                camera_rot[0] += dy / 5.0;
-                camera_rot[1] += dx / 5.0;
-            }
-
-            break;
-
-        case M_MOVE:
-            {
-                double translateSpeed = 0.003;
-                double3 p = psystem->getColliderPos();
-
-                if (buttonState==1)
-                {
-                    double v[3], r[3];
-                    v[0] = dx*translateSpeed;
-                    v[1] = -dy*translateSpeed;
-                    v[2] = 0.0;
-                    ixform(v, r, modelView);
-                    p.x += r[0];
-                    p.y += r[1];
-                    p.z += r[2];
-                }
-                else if (buttonState==2)
-                {
-                    double v[3], r[3];
-                    v[0] = 0.0;
-                    v[1] = 0.0;
-                    v[2] = dy*translateSpeed;
-                    ixform(v, r, modelView);
-                    p.x += r[0];
-                    p.y += r[1];
-                    p.z += r[2];
-                }
-
-                psystem->setColliderPos(p);
-            }
-            break;
-    }
-
-    ox = x;
-    oy = y;
-
-    demoMode = false;
-    idleCounter = 0;
-
-    glutPostRedisplay();
-}
-
-// commented out to remove unused parameter warnings in Linux
-void key(unsigned char key, int /*x*/, int /*y*/)
-{
-    switch (key)
-    {
-        case ' ':
-            bPause = !bPause;
-            break;
-
-        case 13:
-            psystem->update(timestep);
-
-            if (renderer)
-            {
-                renderer->setVertexBuffer(psystem->getCurrentReadBuffer(), psystem->getNumParticles());
-            }
-
-            break;
-
-        case '\033':
-        case 'q':
-            exit(EXIT_SUCCESS);
-            break;
-
-        case 'v':
-            mode = M_VIEW;
-            break;
-
-        case 'm':
-            mode = M_MOVE;
-            break;
-
-        case 'p':
-            displayMode = (ParticleRenderer::DisplayMode)
-                          ((displayMode + 1) % ParticleRenderer::PARTICLE_NUM_MODES);
-            break;
-
-        case 'd':
-            psystem->dumpGrid();
-            break;
-
-        case 'u':
-            psystem->dumpParticles(0, numParticles-1);
-            break;
-
-        case 'r':
-            displayEnabled = !displayEnabled;
-            break;
-
-        case '1':
-            psystem->reset(ParticleSystem::CONFIG_GRID);
-            break;
-
-        case '2':
-            psystem->reset(ParticleSystem::CONFIG_RANDOM);
-            break;
-
-        case '3':
-            addSphere();
-            break;
-
-        case '4':
-            {
-                // shoot ball from camera
-                double pr = psystem->getParticleRadius();
-                double vel[4], velw[4], pos[4], posw[4];
-                vel[0] = 0.0;
-                vel[1] = 0.0;
-                vel[2] = -0.05;
-                vel[3] = 0.0;
-                ixform(vel, velw, modelView);
-
-                pos[0] = 0.0;
-                pos[1] = 0.0;
-                pos[2] = -2.5;
-                pos[3] = 1.0;
-                ixformPoint(pos, posw, modelView);
-                posw[3] = 0.0;
-
-                psystem->addSphere(0, posw, velw, ballr, pr*2.0);
-            }
-            break;
-
-        case 'w':
-            wireframe = !wireframe;
-            break;
-
-        case 'h':
-            displaySliders = !displaySliders;
-            break;
-    }
-
-    demoMode = false;
-    idleCounter = 0;
-    glutPostRedisplay();
-}
-
-void special(int k, int x, int y)
-{
-    if (displaySliders)
-    {
-        params->Special(k, x, y);
-    }
-
-    demoMode = false;
-    idleCounter = 0;
-}
-
-void idle(void)
-{
-    if ((idleCounter++ > idleDelay) && (demoMode==false))
-    {
-        demoMode = true;
-        printf("Entering demo mode\n");
-    }
-
-    if (demoMode)
-    {
-        camera_rot[1] += 0.1;
-
-        if (demoCounter++ > 1000)
-        {
-            ballr = 10 + (rand() % 10);
-            addSphere();
-            demoCounter = 0;
-        }
-    }
-
-    glutPostRedisplay();
 }
 
 void initParams()
@@ -649,27 +162,6 @@ void initParams()
         params->AddParam(new Param<double>("collide shear"  , collideShear  , 0.0, 0.1, 0.001, &collideShear));
         params->AddParam(new Param<double>("collide attract", collideAttraction, 0.0, 0.1, 0.001, &collideAttraction));
     }
-}
-
-void mainMenu(int i)
-{
-    key((unsigned char) i, 0, 0);
-}
-
-void initMenus()
-{
-    glutCreateMenu(mainMenu);
-    glutAddMenuEntry("Reset block [1]", '1');
-    glutAddMenuEntry("Reset random [2]", '2');
-    glutAddMenuEntry("Add sphere [3]", '3');
-    glutAddMenuEntry("View mode [v]", 'v');
-    glutAddMenuEntry("Move cursor mode [m]", 'm');
-    glutAddMenuEntry("Toggle point rendering [p]", 'p');
-    glutAddMenuEntry("Toggle animation [ ]", ' ');
-    glutAddMenuEntry("Step animation [ret]", 13);
-    glutAddMenuEntry("Toggle sliders [h]", 'h');
-    glutAddMenuEntry("Quit (esc)", '\033');
-    glutAttachMenu(GLUT_RIGHT_BUTTON);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -751,20 +243,6 @@ main(int argc, char **argv)
         }
 
         runBenchmark(numIterations, argv[0]);
-    }
-    else
-    {
-        glutDisplayFunc(display);
-        glutReshapeFunc(reshape);
-        glutMouseFunc(mouse);
-        glutMotionFunc(motion);
-        glutKeyboardFunc(key);
-        glutSpecialFunc(special);
-        glutIdleFunc(idle);
-
-        atexit(cleanup);
-
-        glutMainLoop();
     }
 
     if (psystem)
