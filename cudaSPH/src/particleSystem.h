@@ -51,7 +51,7 @@ class ParticleSystem
         }
 
         void dumpGrid();
-        void dumpParticles(uint start, uint count);
+        void dumpParticles(uint start, uint count, const char *fileName);
 
         void setIterations(int i)
         {

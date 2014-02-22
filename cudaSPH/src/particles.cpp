@@ -60,6 +60,7 @@ double collideShear = 0.1;
 double collideAttraction = 0.0;
 
 ParticleSystem *psystem = 0;
+StopWatchInterface *timer = NULL;
 
 // Auto-Verification Code
 unsigned int g_TotalErrors = 0;
@@ -91,6 +92,7 @@ void runBenchmark(int iterations, char *exec_path)
     cudaDeviceSynchronize();
     sdkStartTimer(&timer);
 
+    psystem->dumpParticles(0,psystem->getNumParticles(),"Before.txt");
     for (int i = 0; i < iterations; ++i)
     {
         psystem->update(timestep);
@@ -102,7 +104,7 @@ void runBenchmark(int iterations, char *exec_path)
 
     printf("particles, Throughput = %.4f KParticles/s, Time = %.5f s, Size = %u particles, NumDevsUsed = %u, Workgroup = %u\n",
            (1.0e-3 * numParticles)/fAvgSeconds, fAvgSeconds, numParticles, 1, 0);
-
+    psystem->dumpParticles(0,psystem->getNumParticles(),"After.txt");
 //    if (g_refFile)
 //    {
 //        printf("\nChecking result...\n\n");
@@ -152,7 +154,6 @@ main(int argc, char **argv)
         if (checkCmdLineFlag(argc, (const char **)argv, "file"))
         {
             getCmdLineArgumentString(argc, (const char **)argv, "file", &g_refFile);
-            fpsLimit = frameCheckNumber;
             numIterations = 1;
         }
     }

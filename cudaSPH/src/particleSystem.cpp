@@ -222,18 +222,22 @@ ParticleSystem::dumpGrid()
 }
 
 void
-ParticleSystem::dumpParticles(uint start, uint count)
+ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
 {
+	  FILE * pFile;
+	  pFile = fopen (fileName,"w");
+
     // debug
     copyArrayFromDevice(m_hPos, m_dPos, 0, sizeof(double)*4*count);
     copyArrayFromDevice(m_hVel, m_dVel, 0, sizeof(double)*4*count);
 
-    for (uint i=start; i<start+count; i++)
-    {
+    for (uint i=start; i<start+count; i++)  {
         //        printf("%d: ", i);
-        printf("pos: (%.4f, %.4f, %.4f, %.4f)\n", m_hPos[i*4+0], m_hPos[i*4+1], m_hPos[i*4+2], m_hPos[i*4+3]);
-        printf("vel: (%.4f, %.4f, %.4f, %.4f)\n", m_hVel[i*4+0], m_hVel[i*4+1], m_hVel[i*4+2], m_hVel[i*4+3]);
+    	fprintf(pFile,"%10.9f, %10.9f, %10.f\n", m_hPos[i*4+0], m_hPos[i*4+1], m_hPos[i*4+2]);
+//        printf("pos: (%.4f, %.4f, %.4f, %.4f)\n", m_hPos[i*4+0], m_hPos[i*4+1], m_hPos[i*4+2], m_hPos[i*4+3]);
+//        printf("vel: (%.4f, %.4f, %.4f, %.4f)\n", m_hVel[i*4+0], m_hVel[i*4+1], m_hVel[i*4+2], m_hVel[i*4+3]);
     }
+    fclose(pFile);
 }
 
 double *
@@ -305,6 +309,10 @@ ParticleSystem::initGrid(uint *size, double spacing, double jitter, uint numPart
                     m_hPos[i*4] = (spacing * x) + m_params.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
                     m_hPos[i*4+1] = (spacing * y) + m_params.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
                     m_hPos[i*4+2] = (spacing * z) + m_params.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
+
+//                    m_hPos[i*4] = (spacing * x) + m_params.particleRadius - 1.0;
+//				    m_hPos[i*4+1] = (spacing * y) + m_params.particleRadius - 1.0;
+//				    m_hPos[i*4+2] = (spacing * z) + m_params.particleRadius - 1.0;
                     m_hPos[i*4+3] = 1.0;
 
                     m_hVel[i*4] = 0.0;
