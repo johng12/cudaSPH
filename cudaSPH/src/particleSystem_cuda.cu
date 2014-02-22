@@ -12,18 +12,11 @@
 // This file contains C wrappers around the some of the CUDA API and the
 // kernel functions so that they can be called from "particleSystem.cpp"
 
-#if defined(__APPLE__) || defined(MACOSX)
-#include <GLUT/glut.h>
-#else
-#include <GL/freeglut.h>
-#endif
-
 #include <cstdlib>
 #include <cstdio>
 #include <string.h>
 
 #include <cuda_runtime.h>
-#include <cuda_gl_interop.h>
 
 #include <helper_cuda.h>
 #include <helper_cuda_gl.h>
@@ -53,12 +46,6 @@ extern "C"
         }
     }
 
-    void cudaGLInit(int argc, char **argv)
-    {
-        // use command-line specified CUDA device, otherwise use device with highest Gflops/s
-        findCudaGLDevice(argc, (const char **)argv);
-    }
-
     void allocateArray(void **devPtr, size_t size)
     {
         checkCudaErrors(cudaMalloc(devPtr, size));
@@ -79,46 +66,11 @@ extern "C"
         checkCudaErrors(cudaMemcpy((char *) device + offset, host, size, cudaMemcpyHostToDevice));
     }
 
-    void registerGLBufferObject(uint vbo, struct cudaGraphicsResource **cuda_vbo_resource)
+    void copyArrayFromDevice(void *host, const void *device,int offset, int size)
     {
-        checkCudaErrors(cudaGraphicsGLRegisterBuffer(cuda_vbo_resource, vbo,
-                                                     cudaGraphicsMapFlagsNone));
-    }
-
-    void unregisterGLBufferObject(struct cudaGraphicsResource *cuda_vbo_resource)
-    {
-        checkCudaErrors(cudaGraphicsUnregisterResource(cuda_vbo_resource));
-    }
-
-    void *mapGLBufferObject(struct cudaGraphicsResource **cuda_vbo_resource)
-    {
-        void *ptr;
-        checkCudaErrors(cudaGraphicsMapResources(1, cuda_vbo_resource, 0));
-        size_t num_bytes;
-        checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void **)&ptr, &num_bytes,
-                                                             *cuda_vbo_resource));
-        return ptr;
-    }
-
-    void unmapGLBufferObject(struct cudaGraphicsResource *cuda_vbo_resource)
-    {
-        checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_vbo_resource, 0));
-    }
-
-    void copyArrayFromDevice(void *host, const void *device,
-                             struct cudaGraphicsResource **cuda_vbo_resource, int size)
-    {
-        if (cuda_vbo_resource)
-        {
-            device = mapGLBufferObject(cuda_vbo_resource);
-        }
 
         checkCudaErrors(cudaMemcpy(host, device, size, cudaMemcpyDeviceToHost));
 
-        if (cuda_vbo_resource)
-        {
-            unmapGLBufferObject(*cuda_vbo_resource);
-        }
     }
 
     void setParameters(SimParams *hostParams)
