@@ -26,7 +26,6 @@
 // CUDA utilities and system includes
 #include <helper_functions.h>
 #include <helper_cuda.h>    // includes cuda.h and cuda_runtime_api.h
-#include <helper_cuda_gl.h> // includes cuda_gl_interop.h// includes cuda_gl_interop.h
 
 // Includes
 #include <stdlib.h>
@@ -70,20 +69,13 @@ const char *sSDKsample = "CUDA Particles Simulation";
 
 extern "C" void cudaInit(int argc, char **argv);
 extern "C" void cudaGLInit(int argc, char **argv);
-extern "C" void copyArrayFromDevice(void *host, const void *device, unsigned int vbo, int size);
+extern "C" void copyArrayFromDevice(void *host, const void *device, int size);
 
 // initialize particle system
-void initParticleSystem(int numParticles, uint3 gridSize, bool bUseOpenGL)
+void initParticleSystem(int numParticles, uint3 gridSize)
 {
-    psystem = new ParticleSystem(numParticles, gridSize, bUseOpenGL);
+    psystem = new ParticleSystem(numParticles, gridSize);
     psystem->reset(ParticleSystem::CONFIG_GRID);
-
-    if (bUseOpenGL)
-    {
-        renderer = new ParticleRenderer;
-        renderer->setParticleRadius(psystem->getParticleRadius());
-        renderer->setColorBuffer(psystem->getColorBuffer());
-    }
 
     sdkCreateTimer(&timer);
 }
@@ -111,57 +103,26 @@ void runBenchmark(int iterations, char *exec_path)
     printf("particles, Throughput = %.4f KParticles/s, Time = %.5f s, Size = %u particles, NumDevsUsed = %u, Workgroup = %u\n",
            (1.0e-3 * numParticles)/fAvgSeconds, fAvgSeconds, numParticles, 1, 0);
 
-    if (g_refFile)
-    {
-        printf("\nChecking result...\n\n");
-        double *hPos = (double *)malloc(sizeof(double)*4*psystem->getNumParticles());
-        copyArrayFromDevice(hPos, psystem->getCudaPosVBO(),
-                            0, sizeof(double)*4*psystem->getNumParticles());
-
-        sdkDumpBin((void *)hPos, sizeof(double)*4*psystem->getNumParticles(), "particles.bin");
-
-        if (!sdkCompareBin2BinFloat("particles.bin", g_refFile, sizeof(float)*4*psystem->getNumParticles(),
-                                    MAX_EPSILON_ERROR, THRESHOLD, exec_path))
-        {
-            g_TotalErrors++;
-        }
-    }
+//    if (g_refFile)
+//    {
+//        printf("\nChecking result...\n\n");
+//        double *hPos = (double *)malloc(sizeof(double)*4*psystem->getNumParticles());
+//        copyArrayFromDevice(hPos, psystem->getCudaPosVBO(),
+//                            0, sizeof(double)*4*psystem->getNumParticles());
+//
+//        sdkDumpBin((void *)hPos, sizeof(double)*4*psystem->getNumParticles(), "particles.bin");
+//
+//        if (!sdkCompareBin2BinFloat("particles.bin", g_refFile, sizeof(float)*4*psystem->getNumParticles(),
+//                                    MAX_EPSILON_ERROR, THRESHOLD, exec_path))
+//        {
+//            g_TotalErrors++;
+//        }
+//    }
 }
 
 inline double frand()
 {
     return rand() / (double) RAND_MAX;
-}
-
-void initParams()
-{
-    if (g_refFile)
-    {
-        timestep = 0.0;
-        damping = 0.0;
-        gravity = 0.0;
-        ballr = 1;
-        collideSpring = 0.0;
-        collideDamping = 0.0;
-        collideShear = 0.0;
-        collideAttraction = 0.0;
-
-    }
-    else
-    {
-
-        // create a new parameter list
-        params = new ParamListGL("misc");
-        params->AddParam(new Param<double>("time step", timestep, 0.0, 1.0, 0.01, &timestep));
-        params->AddParam(new Param<double>("damping"  , damping , 0.0, 1.0, 0.001, &damping));
-        params->AddParam(new Param<double>("gravity"  , gravity , 0.0, 0.001, 0.0001, &gravity));
-        params->AddParam(new Param<int> ("ball radius", ballr , 1, 20, 1, &ballr));
-
-        params->AddParam(new Param<double>("collide spring" , collideSpring , 0.0, 1.0, 0.001, &collideSpring));
-        params->AddParam(new Param<double>("collide damping", collideDamping, 0.0, 0.1, 0.001, &collideDamping));
-        params->AddParam(new Param<double>("collide shear"  , collideShear  , 0.0, 0.1, 0.001, &collideShear));
-        params->AddParam(new Param<double>("collide attract", collideAttraction, 0.0, 0.1, 0.001, &collideAttraction));
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -222,20 +183,11 @@ main(int argc, char **argv)
             printf("exiting...\n");
             exit(EXIT_SUCCESS);
         }
-
-        initGL(&argc, argv);
-        cudaGLInit(argc, argv);
     }
 
-    initParticleSystem(numParticles, gridSize, g_refFile==NULL);
-    initParams();
+    initParticleSystem(numParticles, gridSize);
 
-    if (!g_refFile)
-    {
-        initMenus();
-    }
-
-    if (benchmark || g_refFile)
+    if (benchmark)
     {
         if (numIterations <= 0)
         {

@@ -258,7 +258,7 @@ ParticleSystem::getArray(ParticleArray array)
             break;
     }
 
-    copyArrayFromDevice(hdata, ddata, m_numParticles*4*sizeof(double));
+    copyArrayFromDevice(hdata, ddata, 0,m_numParticles*4*sizeof(double));
     return hdata;
 }
 
