@@ -105,20 +105,20 @@ LIBRARIES :=
 
 ################################################################################
 
-# Makefile include to help find GL Libraries
-EXEC            ?=
-include ./findgllib.mk
-
-# OpenGL specific libraries 
-ifneq ($(DARWIN),)
-  # Mac OSX specific libraries and paths to include
-  LIBRARIES += -L/System/Library/Frameworks/OpenGL.framework/Libraries 
-  LIBRARIES += -lGL -lGLU ../../common/lib/darwin/libGLEW.a
-  ALL_LDFLAGS += -Xlinker -framework -Xlinker GLUT
-else
-  LIBRARIES += -L../../common/lib/$(OSLOWER)/$(OS_ARCH) $(GLLINK)
-  LIBRARIES += -lGL -lGLU -lX11 -lXi -lXmu -lglut -lGLEW
-endif
+## Makefile include to help find GL Libraries
+#EXEC            ?=
+#include ./findgllib.mk
+#
+## OpenGL specific libraries 
+#ifneq ($(DARWIN),)
+#  # Mac OSX specific libraries and paths to include
+#  LIBRARIES += -L/System/Library/Frameworks/OpenGL.framework/Libraries 
+#  LIBRARIES += -lGL -lGLU ../../common/lib/darwin/libGLEW.a
+#  ALL_LDFLAGS += -Xlinker -framework -Xlinker GLUT
+#else
+#  LIBRARIES += -L../../common/lib/$(OSLOWER)/$(OS_ARCH) $(GLLINK)
+#  LIBRARIES += -lGL -lGLU -lX11 -lXi -lXmu -lglut -lGLEW
+#endif
 
 # CUDA code generation flags
 #ifneq ($(OS_ARCH),armv7l)
@@ -147,13 +147,7 @@ particles.o: particles.cpp
 particleSystem.o: particleSystem.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-render_particles.o: render_particles.cpp
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
-
-shaders.o: shaders.cpp
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
-
-particles: particles.o particleSystem_cuda.o particleSystem.o render_particles.o shaders.o
+particles: particles.o particleSystem_cuda.o particleSystem.o 
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) -o $@ $+ $(LIBRARIES)
 	$(EXEC) mkdir -p ../../bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))
 	$(EXEC) cp $@ ../../bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))
