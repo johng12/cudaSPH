@@ -24,15 +24,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
-#include <GL/glew.h>
 
 #ifndef CUDART_PI_F
 #define CUDART_PI_F         3.141592654
 #endif
 
-ParticleSystem::ParticleSystem(uint numParticles, uint3 gridSize, bool bUseOpenGL) :
+ParticleSystem::ParticleSystem(uint numParticles, uint3 gridSize) :
     m_bInitialized(false),
-    m_bUseOpenGL(bUseOpenGL),
     m_numParticles(numParticles),
     m_hPos(0),
     m_hVel(0),
@@ -79,42 +77,9 @@ ParticleSystem::~ParticleSystem()
     m_numParticles = 0;
 }
 
-uint
-ParticleSystem::createVBO(uint size)
-{
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, size, 0, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    return vbo;
-}
-
 inline double lerp(double a, double b, double t)
 {
     return a + t*(b-a);
-}
-
-// create a color ramp
-void colorRamp(double t, double *r)
-{
-    const int ncolors = 7;
-    double c[ncolors][3] =
-    {
-        { 1.0, 0.0, 0.0, },
-        { 1.0, 0.5, 0.0, },
-        { 1.0, 1.0, 0.0, },
-        { 0.0, 1.0, 0.0, },
-        { 0.0, 1.0, 1.0, },
-        { 0.0, 0.0, 1.0, },
-        { 1.0, 0.0, 1.0, },
-    };
-    t = t * (ncolors-1);
-    int i = (int) t;
-    double u = t - floor(t);
-    r[0] = lerp(c[i][0], c[i+1][0], u);
-    r[1] = lerp(c[i][1], c[i+1][1], u);
-    r[2] = lerp(c[i][2], c[i+1][2], u);
 }
 
 void
@@ -139,16 +104,7 @@ ParticleSystem::_initialize(int numParticles)
     // allocate GPU data
     unsigned int memSize = sizeof(double) * 4 * m_numParticles;
 
-    if (m_bUseOpenGL)
-    {
-        m_posVbo = createVBO(memSize);
-        registerGLBufferObject(m_posVbo, &m_cuda_posvbo_resource);
-    }
-    else
-    {
-        checkCudaErrors(cudaMalloc((void **)&m_cudaPosVBO, memSize)) ;
-    }
-
+	allocateArray((void **)&m_dPos, memSize);
     allocateArray((void **)&m_dVel, memSize);
 
     allocateArray((void **)&m_dSortedPos, memSize);
@@ -159,37 +115,6 @@ ParticleSystem::_initialize(int numParticles)
 
     allocateArray((void **)&m_dCellStart, m_numGridCells*sizeof(uint));
     allocateArray((void **)&m_dCellEnd, m_numGridCells*sizeof(uint));
-
-    if (m_bUseOpenGL)
-    {
-        m_colorVBO = createVBO(m_numParticles*4*sizeof(double));
-        registerGLBufferObject(m_colorVBO, &m_cuda_colorvbo_resource);
-
-        // fill color buffer
-        glBindBufferARB(GL_ARRAY_BUFFER, m_colorVBO);
-        double *data = (double *) glMapBufferARB(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
-        double *ptr = data;
-
-        for (uint i=0; i<m_numParticles; i++)
-        {
-            double t = i / (double) m_numParticles;
-#if 0
-            *ptr++ = rand() / (double) RAND_MAX;
-            *ptr++ = rand() / (double) RAND_MAX;
-            *ptr++ = rand() / (double) RAND_MAX;
-#else
-            colorRamp(t, ptr);
-            ptr+=3;
-#endif
-            *ptr++ = 1.0;
-        }
-
-        glUnmapBufferARB(GL_ARRAY_BUFFER);
-    }
-    else
-    {
-        checkCudaErrors(cudaMalloc((void **)&m_cudaColorVBO, sizeof(double)*numParticles*4));
-    }
 
     sdkCreateTimer(&m_timer);
 
@@ -216,18 +141,6 @@ ParticleSystem::_finalize()
     freeArray(m_dGridParticleIndex);
     freeArray(m_dCellStart);
     freeArray(m_dCellEnd);
-
-    if (m_bUseOpenGL)
-    {
-        unregisterGLBufferObject(m_cuda_posvbo_resource);
-        glDeleteBuffers(1, (const GLuint *)&m_posVbo);
-        glDeleteBuffers(1, (const GLuint *)&m_colorVBO);
-    }
-    else
-    {
-        checkCudaErrors(cudaFree(m_cudaPosVBO));
-        checkCudaErrors(cudaFree(m_cudaColorVBO));
-    }
 }
 
 // step the simulation
@@ -236,23 +149,12 @@ ParticleSystem::update(double deltaTime)
 {
     assert(m_bInitialized);
 
-    double *dPos;
-
-    if (m_bUseOpenGL)
-    {
-        dPos = (double *) mapGLBufferObject(&m_cuda_posvbo_resource);
-    }
-    else
-    {
-        dPos = (double *) m_cudaPosVBO;
-    }
-
     // update constants
     setParameters(&m_params);
 
     // integrate
     integrateSystem(
-        dPos,
+        m_dPos,
         m_dVel,
         deltaTime,
         m_numParticles);
@@ -261,7 +163,7 @@ ParticleSystem::update(double deltaTime)
     calcHash(
         m_dGridParticleHash,
         m_dGridParticleIndex,
-        dPos,
+        m_dPos,
         m_numParticles);
 
     // sort particles based on hash
@@ -276,7 +178,7 @@ ParticleSystem::update(double deltaTime)
         m_dSortedVel,
         m_dGridParticleHash,
         m_dGridParticleIndex,
-        dPos,
+        m_dPos,
         m_dVel,
         m_numParticles,
         m_numGridCells);
@@ -292,11 +194,6 @@ ParticleSystem::update(double deltaTime)
         m_numParticles,
         m_numGridCells);
 
-    // note: do unmap at end here to avoid unnecessary graphics/CUDA context switch
-    if (m_bUseOpenGL)
-    {
-        unmapGLBufferObject(m_cuda_posvbo_resource);
-    }
 }
 
 void
@@ -328,7 +225,7 @@ void
 ParticleSystem::dumpParticles(uint start, uint count)
 {
     // debug
-    copyArrayFromDevice(m_hPos, 0, &m_cuda_posvbo_resource, sizeof(double)*4*count);
+    copyArrayFromDevice(m_hPos, m_dPos, 0, sizeof(double)*4*count);
     copyArrayFromDevice(m_hVel, m_dVel, 0, sizeof(double)*4*count);
 
     for (uint i=start; i<start+count; i++)
@@ -346,7 +243,6 @@ ParticleSystem::getArray(ParticleArray array)
 
     double *hdata = 0;
     double *ddata = 0;
-    struct cudaGraphicsResource *cuda_vbo_resource = 0;
 
     switch (array)
     {
@@ -354,7 +250,6 @@ ParticleSystem::getArray(ParticleArray array)
         case POSITION:
             hdata = m_hPos;
             ddata = m_dPos;
-            cuda_vbo_resource = m_cuda_posvbo_resource;
             break;
 
         case VELOCITY:
@@ -363,7 +258,7 @@ ParticleSystem::getArray(ParticleArray array)
             break;
     }
 
-    copyArrayFromDevice(hdata, ddata, &cuda_vbo_resource, m_numParticles*4*sizeof(double));
+    copyArrayFromDevice(hdata, ddata, m_numParticles*4*sizeof(double));
     return hdata;
 }
 
@@ -376,17 +271,10 @@ ParticleSystem::setArray(ParticleArray array, const double *data, int start, int
     {
         default:
         case POSITION:
-            {
-                if (m_bUseOpenGL)
-                {
-                    unregisterGLBufferObject(m_cuda_posvbo_resource);
-                    glBindBuffer(GL_ARRAY_BUFFER, m_posVbo);
-                    glBufferSubData(GL_ARRAY_BUFFER, start*4*sizeof(double), count*4*sizeof(double), data);
-                    glBindBuffer(GL_ARRAY_BUFFER, 0);
-                    registerGLBufferObject(m_posVbo, &m_cuda_posvbo_resource);
-                }
-            }
-            break;
+			copyArrayToDevice(m_dPos, data, start*4*sizeof(double), count*4*sizeof(double));
+			break;
+
+
 
         case VELOCITY:
             copyArrayToDevice(m_dVel, data, start*4*sizeof(double), count*4*sizeof(double));
@@ -470,42 +358,4 @@ ParticleSystem::reset(ParticleConfig config)
 
     setArray(POSITION, m_hPos, 0, m_numParticles);
     setArray(VELOCITY, m_hVel, 0, m_numParticles);
-}
-
-void
-ParticleSystem::addSphere(int start, double *pos, double *vel, int r, double spacing)
-{
-    uint index = start;
-
-    for (int z=-r; z<=r; z++)
-    {
-        for (int y=-r; y<=r; y++)
-        {
-            for (int x=-r; x<=r; x++)
-            {
-                double dx = x*spacing;
-                double dy = y*spacing;
-                double dz = z*spacing;
-                double l = sqrtf(dx*dx + dy*dy + dz*dz);
-                double jitter = m_params.particleRadius*0.01;
-
-                if ((l <= m_params.particleRadius*2.0f*r) && (index < m_numParticles))
-                {
-                    m_hPos[index*4]   = pos[0] + dx + (frand()*2.0f-1.0)*jitter;
-                    m_hPos[index*4+1] = pos[1] + dy + (frand()*2.0f-1.0)*jitter;
-                    m_hPos[index*4+2] = pos[2] + dz + (frand()*2.0f-1.0)*jitter;
-                    m_hPos[index*4+3] = pos[3];
-
-                    m_hVel[index*4]   = vel[0];
-                    m_hVel[index*4+1] = vel[1];
-                    m_hVel[index*4+2] = vel[2];
-                    m_hVel[index*4+3] = vel[3];
-                    index++;
-                }
-            }
-        }
-    }
-
-    setArray(POSITION, m_hPos, start, index);
-    setArray(VELOCITY, m_hVel, start, index);
 }

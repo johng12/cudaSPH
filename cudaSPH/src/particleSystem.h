@@ -50,24 +50,6 @@ class ParticleSystem
             return m_numParticles;
         }
 
-        unsigned int getCurrentReadBuffer() const
-        {
-            return m_posVbo;
-        }
-        unsigned int getColorBuffer()       const
-        {
-            return m_colorVBO;
-        }
-
-        void *getCudaPosVBO()              const
-        {
-            return (void *)m_cudaPosVBO;
-        }
-        void *getCudaColorVBO()            const
-        {
-            return (void *)m_cudaColorVBO;
-        }
-
         void dumpGrid();
         void dumpParticles(uint start, uint count);
 
@@ -132,11 +114,8 @@ class ParticleSystem
             return m_params.cellSize;
         }
 
-        void addSphere(int index, double *pos, double *vel, int r, double spacing);
-
     protected: // methods
         ParticleSystem() {}
-        uint createVBO(uint size);
 
         void _initialize(int numParticles);
         void _finalize();
@@ -144,7 +123,7 @@ class ParticleSystem
         void initGrid(uint *size, double spacing, double jitter, uint numParticles);
 
     protected: // data
-        bool m_bInitialized, m_bUseOpenGL;
+        bool m_bInitialized;
         uint m_numParticles;
 
         // CPU data
@@ -169,15 +148,6 @@ class ParticleSystem
         uint  *m_dCellEnd;          // index of end of cell
 
         uint   m_gridSortBits;
-
-        uint   m_posVbo;            // vertex buffer object for particle positions
-        uint   m_colorVBO;          // vertex buffer object for colors
-
-        double *m_cudaPosVBO;        // these are the CUDA deviceMem Pos
-        double *m_cudaColorVBO;      // these are the CUDA deviceMem Color
-
-        struct cudaGraphicsResource *m_cuda_posvbo_resource; // handles OpenGL-CUDA exchange
-        struct cudaGraphicsResource *m_cuda_colorvbo_resource; // handles OpenGL-CUDA exchange
 
         // params
         SimParams m_params;
