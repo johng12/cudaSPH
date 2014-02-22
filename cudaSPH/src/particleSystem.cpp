@@ -233,7 +233,7 @@ ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
 
     for (uint i=start; i<start+count; i++)  {
         //        printf("%d: ", i);
-    	fprintf(pFile,"%10.9f, %10.9f, %10.f\n", m_hPos[i*4+0], m_hPos[i*4+1], m_hPos[i*4+2]);
+    	fprintf(pFile,"%10.9f, %10.9f, %10.9f\n", m_hPos[i*4+0], m_hPos[i*4+1], m_hPos[i*4+2]);
 //        printf("pos: (%.4f, %.4f, %.4f, %.4f)\n", m_hPos[i*4+0], m_hPos[i*4+1], m_hPos[i*4+2], m_hPos[i*4+3]);
 //        printf("vel: (%.4f, %.4f, %.4f, %.4f)\n", m_hVel[i*4+0], m_hVel[i*4+1], m_hVel[i*4+2], m_hVel[i*4+3]);
     }
