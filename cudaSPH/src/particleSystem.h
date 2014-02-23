@@ -39,11 +39,11 @@ class ParticleSystem
             VELOCITY,
         };
 
-        void update(double deltaTime);
+        void update(Real deltaTime);
         void reset(ParticleConfig config);
 
-        double *getArray(ParticleArray array);
-        void   setArray(ParticleArray array, const double *data, int start, int count);
+        Real *getArray(ParticleArray array);
+        void   setArray(ParticleArray array, const Real *data, int start, int count);
 
         int    getNumParticles() const
         {
@@ -58,46 +58,46 @@ class ParticleSystem
             m_solverIterations = i;
         }
 
-        void setDamping(double x)
+        void setDamping(Real x)
         {
             m_params.globalDamping = x;
         }
-        void setGravity(double x)
+        void setGravity(Real x)
         {
-            m_params.gravity = make_double3(0.0, x, 0.0);
+            m_params.gravity = make_Real3(0.0, x, 0.0);
         }
 
-        void setCollideSpring(double x)
+        void setCollideSpring(Real x)
         {
             m_params.spring = x;
         }
-        void setCollideDamping(double x)
+        void setCollideDamping(Real x)
         {
             m_params.damping = x;
         }
-        void setCollideShear(double x)
+        void setCollideShear(Real x)
         {
             m_params.shear = x;
         }
-        void setCollideAttraction(double x)
+        void setCollideAttraction(Real x)
         {
             m_params.attraction = x;
         }
 
-        void setColliderPos(double3 x)
+        void setColliderPos(Real3 x)
         {
             m_params.colliderPos = x;
         }
 
-        double getParticleRadius()
+        Real getParticleRadius()
         {
             return m_params.particleRadius;
         }
-        double3 getColliderPos()
+        Real3 getColliderPos()
         {
             return m_params.colliderPos;
         }
-        double getColliderRadius()
+        Real getColliderRadius()
         {
             return m_params.colliderRadius;
         }
@@ -105,11 +105,11 @@ class ParticleSystem
         {
             return m_params.gridSize;
         }
-        double3 getWorldOrigin()
+        Real3 getWorldOrigin()
         {
             return m_params.worldOrigin;
         }
-        double3 getCellSize()
+        Real3 getCellSize()
         {
             return m_params.cellSize;
         }
@@ -120,26 +120,26 @@ class ParticleSystem
         void _initialize(int numParticles);
         void _finalize();
 
-        void initGrid(uint *size, double spacing, double jitter, uint numParticles);
+        void initGrid(uint *size, Real spacing, Real jitter, uint numParticles);
 
     protected: // data
         bool m_bInitialized;
         uint m_numParticles;
 
         // CPU data
-        double *m_hPos;              // particle positions
-        double *m_hVel;              // particle velocities
+        Real *m_hPos;              // particle positions
+        Real *m_hVel;              // particle velocities
 
         uint  *m_hParticleHash;
         uint  *m_hCellStart;
         uint  *m_hCellEnd;
 
         // GPU data
-        double *m_dPos;
-        double *m_dVel;
+        Real *m_dPos;
+        Real *m_dVel;
 
-        double *m_dSortedPos;
-        double *m_dSortedVel;
+        Real *m_dSortedPos;
+        Real *m_dSortedVel;
 
         // grid data for sorting method
         uint  *m_dGridParticleHash; // grid hash value for each particle

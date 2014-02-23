@@ -92,13 +92,13 @@ extern "C"
         numBlocks = iDivUp(n, numThreads);
     }
 
-    void integrateSystem(double *pos,
-                         double *vel,
-                         double deltaTime,
+    void integrateSystem(Real *pos,
+                         Real *vel,
+                         Real deltaTime,
                          uint numParticles)
     {
-        thrust::device_ptr<double4> d_pos4((double4 *)pos);
-        thrust::device_ptr<double4> d_vel4((double4 *)vel);
+        thrust::device_ptr<Real4> d_pos4((Real4 *)pos);
+        thrust::device_ptr<Real4> d_vel4((Real4 *)vel);
 
         thrust::for_each(
             thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4)),
@@ -108,7 +108,7 @@ extern "C"
 
     void calcHash(uint  *gridParticleHash,
                   uint  *gridParticleIndex,
-                  double *pos,
+                  Real *pos,
                   int    numParticles)
     {
         uint numThreads, numBlocks;
@@ -117,7 +117,7 @@ extern "C"
         // execute the kernel
         calcHashD<<< numBlocks, numThreads >>>(gridParticleHash,
                                                gridParticleIndex,
-                                               (double4 *) pos,
+                                               (Real4 *) pos,
                                                numParticles);
 
         // check if kernel invocation generated an error
@@ -126,12 +126,12 @@ extern "C"
 
     void reorderDataAndFindCellStart(uint  *cellStart,
                                      uint  *cellEnd,
-                                     double *sortedPos,
-                                     double *sortedVel,
+                                     Real *sortedPos,
+                                     Real *sortedVel,
                                      uint  *gridParticleHash,
                                      uint  *gridParticleIndex,
-                                     double *oldPos,
-                                     double *oldVel,
+                                     Real *oldPos,
+                                     Real *oldVel,
                                      uint   numParticles,
                                      uint   numCells)
     {
@@ -142,20 +142,20 @@ extern "C"
         checkCudaErrors(cudaMemset(cellStart, 0xffffffff, numCells*sizeof(uint)));
 
 #if USE_TEX
-        checkCudaErrors(cudaBindTexture(0, oldPosTex, oldPos, numParticles*sizeof(double4)));
-        checkCudaErrors(cudaBindTexture(0, oldVelTex, oldVel, numParticles*sizeof(double4)));
+        checkCudaErrors(cudaBindTexture(0, oldPosTex, oldPos, numParticles*sizeof(Real4)));
+        checkCudaErrors(cudaBindTexture(0, oldVelTex, oldVel, numParticles*sizeof(Real4)));
 #endif
 
         uint smemSize = sizeof(uint)*(numThreads+1);
         reorderDataAndFindCellStartD<<< numBlocks, numThreads, smemSize>>>(
             cellStart,
             cellEnd,
-            (double4 *) sortedPos,
-            (double4 *) sortedVel,
+            (Real4 *) sortedPos,
+            (Real4 *) sortedVel,
             gridParticleHash,
             gridParticleIndex,
-            (double4 *) oldPos,
-            (double4 *) oldVel,
+            (Real4 *) oldPos,
+            (Real4 *) oldVel,
             numParticles);
         getLastCudaError("Kernel execution failed: reorderDataAndFindCellStartD");
 
@@ -165,9 +165,9 @@ extern "C"
 #endif
     }
 
-    void collide(double *newVel,
-                 double *sortedPos,
-                 double *sortedVel,
+    void collide(Real *newVel,
+                 Real *sortedPos,
+                 Real *sortedVel,
                  uint  *gridParticleIndex,
                  uint  *cellStart,
                  uint  *cellEnd,
@@ -175,8 +175,8 @@ extern "C"
                  uint   numCells)
     {
 #if USE_TEX
-        checkCudaErrors(cudaBindTexture(0, oldPosTex, sortedPos, numParticles*sizeof(double4)));
-        checkCudaErrors(cudaBindTexture(0, oldVelTex, sortedVel, numParticles*sizeof(double4)));
+        checkCudaErrors(cudaBindTexture(0, oldPosTex, sortedPos, numParticles*sizeof(Real4)));
+        checkCudaErrors(cudaBindTexture(0, oldVelTex, sortedVel, numParticles*sizeof(Real4)));
         checkCudaErrors(cudaBindTexture(0, cellStartTex, cellStart, numCells*sizeof(uint)));
         checkCudaErrors(cudaBindTexture(0, cellEndTex, cellEnd, numCells*sizeof(uint)));
 #endif
@@ -186,9 +186,9 @@ extern "C"
         computeGridSize(numParticles, 64, numBlocks, numThreads);
 
         // execute the kernel
-        collideD<<< numBlocks, numThreads >>>((double4 *)newVel,
-                                              (double4 *)sortedPos,
-                                              (double4 *)sortedVel,
+        collideD<<< numBlocks, numThreads >>>((Real4 *)newVel,
+                                              (Real4 *)sortedPos,
+                                              (Real4 *)sortedVel,
                                               gridParticleIndex,
                                               cellStart,
                                               cellEnd,

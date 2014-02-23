@@ -23,30 +23,30 @@ extern "C"
 
     void setParameters(SimParams *hostParams);
 
-    void integrateSystem(double *pos,
-                         double *vel,
-                         double deltaTime,
+    void integrateSystem(Real *pos,
+                         Real *vel,
+                         Real deltaTime,
                          uint numParticles);
 
     void calcHash(uint  *gridParticleHash,
                   uint  *gridParticleIndex,
-                  double *pos,
+                  Real *pos,
                   int    numParticles);
 
     void reorderDataAndFindCellStart(uint  *cellStart,
                                      uint  *cellEnd,
-                                     double *sortedPos,
-                                     double *sortedVel,
+                                     Real *sortedPos,
+                                     Real *sortedVel,
                                      uint  *gridParticleHash,
                                      uint  *gridParticleIndex,
-                                     double *oldPos,
-                                     double *oldVel,
+                                     Real *oldPos,
+                                     Real *oldVel,
                                      uint   numParticles,
                                      uint   numCells);
 
-    void collide(double *newVel,
-                 double *sortedPos,
-                 double *sortedVel,
+    void collide(Real *newVel,
+                 Real *sortedPos,
+                 Real *sortedVel,
                  uint  *gridParticleIndex,
                  uint  *cellStart,
                  uint  *cellEnd,
