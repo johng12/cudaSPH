@@ -151,6 +151,7 @@ particles: particles.o particleSystem_cuda.o particleSystem.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) -o $@ $+ $(LIBRARIES)
 	$(EXEC) mkdir -p ../../bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))
 	$(EXEC) cp $@ ../../bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))
+	$(EXEC) rm -f particles *.o
 
 run: build
 	$(EXEC) ./particles

@@ -23,7 +23,7 @@
 class ParticleSystem
 {
     public:
-        ParticleSystem(uint numParticles, uint3 gridSize);
+        ParticleSystem(uint numParticles);
         ~ParticleSystem();
 
         enum ParticleConfig

@@ -29,23 +29,32 @@
 #define CUDART_PI_F         3.141592654
 #endif
 
-ParticleSystem::ParticleSystem(uint numParticles, uint3 gridSize) :
+ParticleSystem::ParticleSystem(uint numParticles) :
     m_bInitialized(false),
     m_numParticles(numParticles),
     m_hPos(0),
     m_hVel(0),
     m_dPos(0),
     m_dVel(0),
-    m_gridSize(gridSize),
     m_timer(NULL),
     m_solverIterations(1)
 {
+	// set simulation parameters
+	m_params.worldOrigin = make_Real3(-1.0, -1.0, -1.0);
+    m_params.worldSize = make_Real3(2.0, 2.0, 2.0);
+    m_params.smoothingLength = 1.0 / 64.0;
+
+    Real3 domainMin = m_params.worldOrigin - 2.0 * m_params.smoothingLength;
+	Real3 domainMax = domainMin + m_params.worldSize + 2.0 * m_params.smoothingLength;
+    Real cellSize = 2.0 * m_params.smoothingLength;  // cell size equal to 2*particle smoothing length
+	m_params.cellSize = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
+
+	m_gridSize.x = floor((domainMax.x - domainMin.x)/m_params.cellSize.x);
+	m_gridSize.y = floor((domainMax.y - domainMin.y)/m_params.cellSize.y);
+	m_gridSize.z = floor((domainMax.z - domainMin.z)/m_params.cellSize.z);
+
     m_numGridCells = m_gridSize.x*m_gridSize.y*m_gridSize.z;
-    Real3 worldSize = make_Real3(2.0, 2.0, 2.0);
 
-    m_gridSortBits = 18;    // increase this for larger grids
-
-    // set simulation parameters
     m_params.gridSize = m_gridSize;
     m_params.numCells = m_numGridCells;
     m_params.numBodies = m_numParticles;
@@ -53,11 +62,6 @@ ParticleSystem::ParticleSystem(uint numParticles, uint3 gridSize) :
     m_params.particleRadius = 1.0 / 64.0;
     m_params.colliderPos = make_Real3(-1.2, -0.8, 0.8);
     m_params.colliderRadius = 0.2;
-
-    m_params.worldOrigin = make_Real3(-1.0, -1.0, -1.0);
-    //    m_params.cellSize = make_Real3(worldSize.x / m_gridSize.x, worldSize.y / m_gridSize.y, worldSize.z / m_gridSize.z);
-    Real cellSize = m_params.particleRadius * 2.0;  // cell size equal to particle diameter
-    m_params.cellSize = make_Real3(cellSize, cellSize, cellSize);
 
     m_params.spring = 0.5;
     m_params.damping = 0.02;
@@ -77,10 +81,10 @@ ParticleSystem::~ParticleSystem()
     m_numParticles = 0;
 }
 
-inline Real lerp(Real a, Real b, Real t)
-{
-    return a + t*(b-a);
-}
+//inline Real lerp(Real a, Real b, Real t)
+//{
+//    return a + t*(b-a);
+//}
 
 void
 ParticleSystem::_initialize(int numParticles)

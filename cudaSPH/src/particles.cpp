@@ -71,9 +71,9 @@ extern "C" void cudaGLInit(int argc, char **argv);
 extern "C" void copyArrayFromDevice(void *host, const void *device, int size);
 
 // initialize particle system
-void initParticleSystem(int numParticles, uint3 gridSize)
+void initParticleSystem(int numParticles)
 {
-    psystem = new ParticleSystem(numParticles, gridSize);
+    psystem = new ParticleSystem(numParticles);
     psystem->reset(ParticleSystem::CONFIG_GRID);
 
     sdkCreateTimer(&timer);
@@ -113,21 +113,21 @@ void runBenchmark(int iterations, char *exec_path)
 //    if (g_refFile)
 //    {
 //        printf("\nChecking result...\n\n");
-<<<<<<< HEAD
+
         Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
         hPos = psystem->getArray(ParticleSystem::POSITION);
 //                            0, sizeof(Real)*4*psystem->getNumParticles());
-=======
+
 //        Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
 //        copyArrayFromDevice(hPos, psystem->getCudaPosVBO(),
 //                            0, sizeof(Real)*4*psystem->getNumParticles());
->>>>>>> branch 'master' of https://github.com/johng12/cudaSPH
+
 //
-<<<<<<< HEAD
+
         sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
-=======
+
 //        sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
->>>>>>> branch 'master' of https://github.com/johng12/cudaSPH
+
 //
 //        if (!sdkCompareBin2BinFloat("particles.bin", g_refFile, sizeof(float)*4*psystem->getNumParticles(),
 //                                    MAX_EPSILON_ERROR, THRESHOLD, exec_path))
@@ -201,7 +201,7 @@ main(int argc, char **argv)
         }
     }
 
-    initParticleSystem(numParticles, gridSize);
+    initParticleSystem(numParticles);
 
     if (benchmark)
     {

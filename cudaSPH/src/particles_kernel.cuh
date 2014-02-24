@@ -14,14 +14,16 @@
 
 #define USE_TEX 0
 
+#include "vector_types.h"
+#include "Type_Def.h"
+
 #if USE_TEX
 #define FETCH(t, i) tex1Dfetch(t##Tex, i)
 #else
 #define FETCH(t, i) t[i]
 #endif
 
-#include "vector_types.h"
-#include "Type_Def.h"
+
 typedef unsigned int uint;
 
 // simulation parameters
@@ -29,6 +31,7 @@ struct SimParams
 {
     Real3 colliderPos;
     Real  colliderRadius;
+    Real smoothingLength;
 
     Real3 gravity;
     Real globalDamping;
@@ -37,6 +40,7 @@ struct SimParams
     uint3 gridSize;
     uint numCells;
     Real3 worldOrigin;
+    Real3 worldSize;
     Real3 cellSize;
 
     uint numBodies;
