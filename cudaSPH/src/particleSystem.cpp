@@ -81,11 +81,6 @@ ParticleSystem::~ParticleSystem()
     m_numParticles = 0;
 }
 
-//inline Real lerp(Real a, Real b, Real t)
-//{
-//    return a + t*(b-a);
-//}
-
 void
 ParticleSystem::_initialize(int numParticles)
 {
