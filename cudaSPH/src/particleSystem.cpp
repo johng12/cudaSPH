@@ -41,7 +41,7 @@ ParticleSystem::ParticleSystem(uint numParticles, uint3 gridSize) :
     m_solverIterations(1)
 {
     m_numGridCells = m_gridSize.x*m_gridSize.y*m_gridSize.z;
-    double3 worldSize = make_double3(2.0, 2.0, 2.0);
+    Real3 worldSize = make_Real3(2.0, 2.0, 2.0);
 
     m_gridSortBits = 18;    // increase this for larger grids
 
@@ -51,13 +51,13 @@ ParticleSystem::ParticleSystem(uint numParticles, uint3 gridSize) :
     m_params.numBodies = m_numParticles;
 
     m_params.particleRadius = 1.0 / 64.0;
-    m_params.colliderPos = make_double3(-1.2, -0.8, 0.8);
+    m_params.colliderPos = make_Real3(-1.2, -0.8, 0.8);
     m_params.colliderRadius = 0.2;
 
-    m_params.worldOrigin = make_double3(-1.0, -1.0, -1.0);
-    //    m_params.cellSize = make_double3(worldSize.x / m_gridSize.x, worldSize.y / m_gridSize.y, worldSize.z / m_gridSize.z);
-    double cellSize = m_params.particleRadius * 2.0;  // cell size equal to particle diameter
-    m_params.cellSize = make_double3(cellSize, cellSize, cellSize);
+    m_params.worldOrigin = make_Real3(-1.0, -1.0, -1.0);
+    //    m_params.cellSize = make_Real3(worldSize.x / m_gridSize.x, worldSize.y / m_gridSize.y, worldSize.z / m_gridSize.z);
+    Real cellSize = m_params.particleRadius * 2.0;  // cell size equal to particle diameter
+    m_params.cellSize = make_Real3(cellSize, cellSize, cellSize);
 
     m_params.spring = 0.5;
     m_params.damping = 0.02;
@@ -65,7 +65,7 @@ ParticleSystem::ParticleSystem(uint numParticles, uint3 gridSize) :
     m_params.attraction = 0.0;
     m_params.boundaryDamping = -0.5;
 
-    m_params.gravity = make_double3(0.0, -0.0003, 0.0);
+    m_params.gravity = make_Real3(0.0, -0.0003, 0.0);
     m_params.globalDamping = 1.0;
 
     _initialize(numParticles);
@@ -77,7 +77,7 @@ ParticleSystem::~ParticleSystem()
     m_numParticles = 0;
 }
 
-inline double lerp(double a, double b, double t)
+inline Real lerp(Real a, Real b, Real t)
 {
     return a + t*(b-a);
 }
@@ -90,10 +90,10 @@ ParticleSystem::_initialize(int numParticles)
     m_numParticles = numParticles;
 
     // allocate host storage
-    m_hPos = new double[m_numParticles*4];
-    m_hVel = new double[m_numParticles*4];
-    memset(m_hPos, 0, m_numParticles*4*sizeof(double));
-    memset(m_hVel, 0, m_numParticles*4*sizeof(double));
+    m_hPos = new Real[m_numParticles*4];
+    m_hVel = new Real[m_numParticles*4];
+    memset(m_hPos, 0, m_numParticles*4*sizeof(Real));
+    memset(m_hVel, 0, m_numParticles*4*sizeof(Real));
 
     m_hCellStart = new uint[m_numGridCells];
     memset(m_hCellStart, 0, m_numGridCells*sizeof(uint));
@@ -102,7 +102,7 @@ ParticleSystem::_initialize(int numParticles)
     memset(m_hCellEnd, 0, m_numGridCells*sizeof(uint));
 
     // allocate GPU data
-    unsigned int memSize = sizeof(double) * 4 * m_numParticles;
+    unsigned int memSize = sizeof(Real) * 4 * m_numParticles;
 
 	allocateArray((void **)&m_dPos, memSize);
     allocateArray((void **)&m_dVel, memSize);
@@ -145,7 +145,7 @@ ParticleSystem::_finalize()
 
 // step the simulation
 void
-ParticleSystem::update(double deltaTime)
+ParticleSystem::update(Real deltaTime)
 {
     assert(m_bInitialized);
 
@@ -228,8 +228,8 @@ ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
 	  pFile = fopen (fileName,"w");
 
     // debug
-    copyArrayFromDevice(m_hPos, m_dPos, 0, sizeof(double)*4*count);
-    copyArrayFromDevice(m_hVel, m_dVel, 0, sizeof(double)*4*count);
+    copyArrayFromDevice(m_hPos, m_dPos, 0, sizeof(Real)*4*count);
+    copyArrayFromDevice(m_hVel, m_dVel, 0, sizeof(Real)*4*count);
 
     for (uint i=start; i<start+count; i++)  {
         //        printf("%d: ", i);
@@ -240,13 +240,13 @@ ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
     fclose(pFile);
 }
 
-double *
+Real *
 ParticleSystem::getArray(ParticleArray array)
 {
     assert(m_bInitialized);
 
-    double *hdata = 0;
-    double *ddata = 0;
+    Real *hdata = 0;
+    Real *ddata = 0;
 
     switch (array)
     {
@@ -262,12 +262,12 @@ ParticleSystem::getArray(ParticleArray array)
             break;
     }
 
-    copyArrayFromDevice(hdata, ddata, 0,m_numParticles*4*sizeof(double));
+    copyArrayFromDevice(hdata, ddata, 0,m_numParticles*4*sizeof(Real));
     return hdata;
 }
 
 void
-ParticleSystem::setArray(ParticleArray array, const double *data, int start, int count)
+ParticleSystem::setArray(ParticleArray array, const Real *data, int start, int count)
 {
     assert(m_bInitialized);
 
@@ -275,24 +275,24 @@ ParticleSystem::setArray(ParticleArray array, const double *data, int start, int
     {
         default:
         case POSITION:
-			copyArrayToDevice(m_dPos, data, start*4*sizeof(double), count*4*sizeof(double));
+			copyArrayToDevice(m_dPos, data, start*4*sizeof(Real), count*4*sizeof(Real));
 			break;
 
 
 
         case VELOCITY:
-            copyArrayToDevice(m_dVel, data, start*4*sizeof(double), count*4*sizeof(double));
+            copyArrayToDevice(m_dVel, data, start*4*sizeof(Real), count*4*sizeof(Real));
             break;
     }
 }
 
-inline double frand()
+inline Real frand()
 {
-    return rand() / (double) RAND_MAX;
+    return rand() / (Real) RAND_MAX;
 }
 
 void
-ParticleSystem::initGrid(uint *size, double spacing, double jitter, uint numParticles)
+ParticleSystem::initGrid(uint *size, Real spacing, Real jitter, uint numParticles)
 {
     srand(1973);
 
@@ -337,7 +337,7 @@ ParticleSystem::reset(ParticleConfig config)
 
                 for (uint i=0; i < m_numParticles; i++)
                 {
-                    double point[3];
+                    Real point[3];
                     point[0] = frand();
                     point[1] = frand();
                     point[2] = frand();
@@ -355,8 +355,8 @@ ParticleSystem::reset(ParticleConfig config)
 
         case CONFIG_GRID:
             {
-                double jitter = m_params.particleRadius*0.01;
-                uint s = (int) ceil(pow((double) m_numParticles, 1.0 / 3.0));
+                Real jitter = m_params.particleRadius*0.01;
+                uint s = (int) ceil(pow((Real) m_numParticles, 1.0 / 3.0));
                 uint gridSize[3];
                 gridSize[0] = gridSize[1] = gridSize[2] = s;
                 initGrid(gridSize, m_params.particleRadius*2.0, jitter, m_numParticles);

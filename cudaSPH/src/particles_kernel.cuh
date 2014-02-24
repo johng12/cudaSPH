@@ -21,31 +21,32 @@
 #endif
 
 #include "vector_types.h"
+#include "Type_Def.h"
 typedef unsigned int uint;
 
 // simulation parameters
 struct SimParams
 {
-    double3 colliderPos;
-    double  colliderRadius;
+    Real3 colliderPos;
+    Real  colliderRadius;
 
-    double3 gravity;
-    double globalDamping;
-    double particleRadius;
+    Real3 gravity;
+    Real globalDamping;
+    Real particleRadius;
 
     uint3 gridSize;
     uint numCells;
-    double3 worldOrigin;
-    double3 cellSize;
+    Real3 worldOrigin;
+    Real3 cellSize;
 
     uint numBodies;
     uint maxParticlesPerCell;
 
-    double spring;
-    double damping;
-    double shear;
-    double attraction;
-    double boundaryDamping;
+    Real spring;
+    Real damping;
+    Real shear;
+    Real attraction;
+    Real boundaryDamping;
 };
 
 #endif

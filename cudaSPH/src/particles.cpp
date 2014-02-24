@@ -46,16 +46,16 @@ uint3 gridSize;
 int numIterations = 0; // run until exit
 
 // simulation parameters
-double timestep = 0.5;
-double damping = 1.0;
-double gravity = 0.0003;
+Real timestep = 0.5;
+Real damping = 1.0;
+Real gravity = 0.0003;
 int iterations = 1;
 int ballr = 10;
 
-double collideSpring = 0.5;
-double collideDamping = 0.02;
-double collideShear = 0.1;
-double collideAttraction = 0.0;
+Real collideSpring = 0.5;
+Real collideDamping = 0.02;
+Real collideShear = 0.1;
+Real collideAttraction = 0.0;
 
 ParticleSystem *psystem = 0;
 StopWatchInterface *timer = NULL;
@@ -106,18 +106,28 @@ void runBenchmark(int iterations, char *exec_path)
 
     cudaDeviceSynchronize();
     sdkStopTimer(&timer);
-    double fAvgSeconds = ((double)1.0e-3 * (double)sdkGetTimerValue(&timer)/(double)iterations);
+    Real fAvgSeconds = ((Real)1.0e-3 * (Real)sdkGetTimerValue(&timer)/(Real)iterations);
 
     printf("particles, Throughput = %.4f KParticles/s, Time = %.5f s, Size = %u particles, NumDevsUsed = %u, Workgroup = %u\n",
            (1.0e-3 * numParticles)/fAvgSeconds, fAvgSeconds, numParticles, 1, 0);
 //    if (g_refFile)
 //    {
 //        printf("\nChecking result...\n\n");
-        double *hPos = (double *)malloc(sizeof(double)*4*psystem->getNumParticles());
+<<<<<<< HEAD
+        Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
         hPos = psystem->getArray(ParticleSystem::POSITION);
-//                            0, sizeof(double)*4*psystem->getNumParticles());
+//                            0, sizeof(Real)*4*psystem->getNumParticles());
+=======
+//        Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
+//        copyArrayFromDevice(hPos, psystem->getCudaPosVBO(),
+//                            0, sizeof(Real)*4*psystem->getNumParticles());
+>>>>>>> branch 'master' of https://github.com/johng12/cudaSPH
 //
-        sdkDumpBin((void *)hPos, sizeof(double)*4*psystem->getNumParticles(), "particles.bin");
+<<<<<<< HEAD
+        sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
+=======
+//        sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
+>>>>>>> branch 'master' of https://github.com/johng12/cudaSPH
 //
 //        if (!sdkCompareBin2BinFloat("particles.bin", g_refFile, sizeof(float)*4*psystem->getNumParticles(),
 //                                    MAX_EPSILON_ERROR, THRESHOLD, exec_path))
@@ -127,9 +137,9 @@ void runBenchmark(int iterations, char *exec_path)
 //    }
 }
 
-inline double frand()
+inline Real frand()
 {
-    return rand() / (double) RAND_MAX;
+    return rand() / (Real) RAND_MAX;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

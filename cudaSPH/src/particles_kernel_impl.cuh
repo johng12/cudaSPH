@@ -20,12 +20,13 @@
 #include <math.h>
 #include "helper_math.h"
 #include "math_constants.h"
+#include "Type_Def.h"
 #include "particles_kernel.cuh"
 
 #if USE_TEX
 // textures for particle position and velocity
-texture<double4, 1, cudaReadModeElementType> oldPosTex;
-texture<double4, 1, cudaReadModeElementType> oldVelTex;
+texture<Real4, 1, cudaReadModeElementType> oldPosTex;
+texture<Real4, 1, cudaReadModeElementType> oldVelTex;
 
 texture<uint, 1, cudaReadModeElementType> gridParticleHashTex;
 texture<uint, 1, cudaReadModeElementType> cellStartTex;
@@ -38,19 +39,19 @@ __constant__ SimParams params;
 
 struct integrate_functor
 {
-    double deltaTime;
+    Real deltaTime;
 
     __host__ __device__
-    integrate_functor(double delta_time) : deltaTime(delta_time) {}
+    integrate_functor(Real delta_time) : deltaTime(delta_time) {}
 
     template <typename Tuple>
     __device__
     void operator()(Tuple t)
     {
-        volatile double4 posData = thrust::get<0>(t);
-        volatile double4 velData = thrust::get<1>(t);
-        double3 pos = make_double3(posData.x, posData.y, posData.z);
-        double3 vel = make_double3(velData.x, velData.y, velData.z);
+        volatile Real4 posData = thrust::get<0>(t);
+        volatile Real4 velData = thrust::get<1>(t);
+        Real3 pos = make_Real3(posData.x, posData.y, posData.z);
+        Real3 vel = make_Real3(velData.x, velData.y, velData.z);
 
         vel += params.gravity * deltaTime;
         vel *= params.globalDamping;
@@ -100,13 +101,13 @@ struct integrate_functor
         }
 
         // store new position and velocity
-        thrust::get<0>(t) = make_double4(pos, posData.w);
-        thrust::get<1>(t) = make_double4(vel, velData.w);
+        thrust::get<0>(t) = make_Real4(pos, posData.w);
+        thrust::get<1>(t) = make_Real4(vel, velData.w);
     }
 };
 
 // calculate position in uniform grid
-__device__ int3 calcGridPos(double3 p)
+__device__ int3 calcGridPos(Real3 p)
 {
     int3 gridPos;
     gridPos.x = floor((p.x - params.worldOrigin.x) / params.cellSize.x);
@@ -128,17 +129,17 @@ __device__ uint calcGridHash(int3 gridPos)
 __global__
 void calcHashD(uint   *gridParticleHash,  // output
                uint   *gridParticleIndex, // output
-               double4 *pos,               // input: positions
+               Real4 *pos,               // input: positions
                uint    numParticles)
 {
     uint index = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
 
     if (index >= numParticles) return;
 
-    volatile double4 p = pos[index];
+    volatile Real4 p = pos[index];
 
     // get address in grid
-    int3 gridPos = calcGridPos(make_double3(p.x, p.y, p.z));
+    int3 gridPos = calcGridPos(make_Real3(p.x, p.y, p.z));
     uint hash = calcGridHash(gridPos);
 
     // store grid hash and particle index
@@ -151,12 +152,12 @@ void calcHashD(uint   *gridParticleHash,  // output
 __global__
 void reorderDataAndFindCellStartD(uint   *cellStart,        // output: cell start index
                                   uint   *cellEnd,          // output: cell end index
-                                  double4 *sortedPos,        // output: sorted positions
-                                  double4 *sortedVel,        // output: sorted velocities
+                                  Real4 *sortedPos,        // output: sorted positions
+                                  Real4 *sortedVel,        // output: sorted velocities
                                   uint   *gridParticleHash, // input: sorted grid hashes
                                   uint   *gridParticleIndex,// input: sorted particle indices
-                                  double4 *oldPos,           // input: sorted position array
-                                  double4 *oldVel,           // input: sorted velocity array
+                                  Real4 *oldPos,           // input: sorted position array
+                                  Real4 *oldVel,           // input: sorted velocity array
                                   uint    numParticles)
 {
     extern __shared__ uint sharedHash[];    // blockSize + 1 elements
@@ -206,8 +207,8 @@ void reorderDataAndFindCellStartD(uint   *cellStart,        // output: cell star
 
         // Now use the sorted index to reorder the pos and vel data
         uint sortedIndex = gridParticleIndex[index];
-        double4 pos = FETCH(oldPos, sortedIndex);       // macro does either global read or texture fetch
-        double4 vel = FETCH(oldVel, sortedIndex);       // see particles_kernel.cuh
+        Real4 pos = FETCH(oldPos, sortedIndex);       // macro does either global read or texture fetch
+        Real4 vel = FETCH(oldVel, sortedIndex);       // see particles_kernel.cuh
 
         sortedPos[index] = pos;
         sortedVel[index] = vel;
@@ -218,28 +219,28 @@ void reorderDataAndFindCellStartD(uint   *cellStart,        // output: cell star
 
 // collide two spheres using DEM method
 __device__
-double3 collideSpheres(double3 posA, double3 posB,
-                      double3 velA, double3 velB,
-                      double radiusA, double radiusB,
-                      double attraction)
+Real3 collideSpheres(Real3 posA, Real3 posB,
+                      Real3 velA, Real3 velB,
+                      Real radiusA, Real radiusB,
+                      Real attraction)
 {
     // calculate relative position
-    double3 relPos = posB - posA;
+    Real3 relPos = posB - posA;
 
-    double dist = length(relPos);
-    double collideDist = radiusA + radiusB;
+    Real dist = length(relPos);
+    Real collideDist = radiusA + radiusB;
 
-    double3 force = make_double3(0.0);
+    Real3 force = make_Real3(0.0);
 
     if (dist < collideDist)
     {
-        double3 norm = relPos / dist;
+        Real3 norm = relPos / dist;
 
         // relative velocity
-        double3 relVel = velB - velA;
+        Real3 relVel = velB - velA;
 
         // relative tangential velocity
-        double3 tanVel = relVel - (dot(relVel, norm) * norm);
+        Real3 tanVel = relVel - (dot(relVel, norm) * norm);
 
         // spring force
         force = -params.spring*(collideDist - dist) * norm;
@@ -258,12 +259,12 @@ double3 collideSpheres(double3 posA, double3 posB,
 
 // collide a particle against all other particles in a given cell
 __device__
-double3 collideCell(int3    gridPos,
+Real3 collideCell(int3    gridPos,
                    uint    index,
-                   double3  pos,
-                   double3  vel,
-                   double4 *oldPos,
-                   double4 *oldVel,
+                   Real3  pos,
+                   Real3  vel,
+                   Real4 *oldPos,
+                   Real4 *oldVel,
                    uint   *cellStart,
                    uint   *cellEnd)
 {
@@ -272,7 +273,7 @@ double3 collideCell(int3    gridPos,
     // get start of bucket for this cell
     uint startIndex = FETCH(cellStart, gridHash);
 
-    double3 force = make_double3(0.0);
+    Real3 force = make_Real3(0.0);
 
     if (startIndex != 0xffffffff)          // cell is not empty
     {
@@ -283,8 +284,8 @@ double3 collideCell(int3    gridPos,
         {
             if (j != index)                // check not colliding with self
             {
-                double3 pos2 = make_double3(FETCH(oldPos, j));
-                double3 vel2 = make_double3(FETCH(oldVel, j));
+                Real3 pos2 = make_Real3(FETCH(oldPos, j));
+                Real3 vel2 = make_Real3(FETCH(oldVel, j));
 
                 // collide two spheres
                 force += collideSpheres(pos, pos2, vel, vel2, params.particleRadius, params.particleRadius, params.attraction);
@@ -297,9 +298,9 @@ double3 collideCell(int3    gridPos,
 
 
 __global__
-void collideD(double4 *newVel,               // output: new velocity
-              double4 *oldPos,               // input: sorted positions
-              double4 *oldVel,               // input: sorted velocities
+void collideD(Real4 *newVel,               // output: new velocity
+              Real4 *oldPos,               // input: sorted positions
+              Real4 *oldVel,               // input: sorted velocities
               uint   *gridParticleIndex,    // input: sorted particle indices
               uint   *cellStart,
               uint   *cellEnd,
@@ -310,14 +311,14 @@ void collideD(double4 *newVel,               // output: new velocity
     if (index >= numParticles) return;
 
     // read particle data from sorted arrays
-    double3 pos = make_double3(FETCH(oldPos, index));
-    double3 vel = make_double3(FETCH(oldVel, index));
+    Real3 pos = make_Real3(FETCH(oldPos, index));
+    Real3 vel = make_Real3(FETCH(oldVel, index));
 
     // get address in grid
     int3 gridPos = calcGridPos(pos);
 
     // examine neighbouring cells
-    double3 force = make_double3(0.0);
+    Real3 force = make_Real3(0.0);
 
     for (int z=-1; z<=1; z++)
     {
@@ -332,11 +333,11 @@ void collideD(double4 *newVel,               // output: new velocity
     }
 
     // collide with cursor sphere
-    force += collideSpheres(pos, params.colliderPos, vel, make_double3(0.0, 0.0, 0.0), params.particleRadius, params.colliderRadius, 0.0);
+    force += collideSpheres(pos, params.colliderPos, vel, make_Real3(0.0, 0.0, 0.0), params.particleRadius, params.colliderRadius, 0.0);
 
     // write new velocity back to original unsorted location
     uint originalIndex = gridParticleIndex[index];
-    newVel[originalIndex] = make_double4(vel + force, 0.0);
+    newVel[originalIndex] = make_Real4(vel + force, 0.0);
 }
 
 #endif
