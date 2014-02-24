@@ -41,8 +41,6 @@
 #define GRID_SIZE       64
 #define NUM_PARTICLES   16384
 
-const uint width = 640, height = 480;
-
 uint numParticles = 0;
 uint3 gridSize;
 int numIterations = 0; // run until exit
@@ -91,11 +89,19 @@ void runBenchmark(int iterations, char *exec_path)
     printf("Run %u particles simulation for %d iterations...\n\n", numParticles, iterations);
     cudaDeviceSynchronize();
     sdkStartTimer(&timer);
+    int printStep = 100;
 
-    psystem->dumpParticles(0,psystem->getNumParticles(),"Before.txt");
+    char buffer[32]; // The filename buffer.
+
+    psystem->dumpParticles(0,psystem->getNumParticles(),"PART_0000.dat");
     for (int i = 0; i < iterations; ++i)
     {
         psystem->update(timestep);
+        if(!(i%printStep)){
+        	snprintf(buffer, sizeof(char) * 32, "PART%i.dat", i);
+        	psystem->dumpParticles(0,psystem->getNumParticles(),buffer);
+        }
+
     }
 
     cudaDeviceSynchronize();
@@ -104,15 +110,14 @@ void runBenchmark(int iterations, char *exec_path)
 
     printf("particles, Throughput = %.4f KParticles/s, Time = %.5f s, Size = %u particles, NumDevsUsed = %u, Workgroup = %u\n",
            (1.0e-3 * numParticles)/fAvgSeconds, fAvgSeconds, numParticles, 1, 0);
-    psystem->dumpParticles(0,psystem->getNumParticles(),"After.txt");
 //    if (g_refFile)
 //    {
 //        printf("\nChecking result...\n\n");
-//        double *hPos = (double *)malloc(sizeof(double)*4*psystem->getNumParticles());
-//        copyArrayFromDevice(hPos, psystem->getCudaPosVBO(),
+        double *hPos = (double *)malloc(sizeof(double)*4*psystem->getNumParticles());
+        hPos = psystem->getArray(ParticleSystem::POSITION);
 //                            0, sizeof(double)*4*psystem->getNumParticles());
 //
-//        sdkDumpBin((void *)hPos, sizeof(double)*4*psystem->getNumParticles(), "particles.bin");
+        sdkDumpBin((void *)hPos, sizeof(double)*4*psystem->getNumParticles(), "particles.bin");
 //
 //        if (!sdkCompareBin2BinFloat("particles.bin", g_refFile, sizeof(float)*4*psystem->getNumParticles(),
 //                                    MAX_EPSILON_ERROR, THRESHOLD, exec_path))
