@@ -29,19 +29,35 @@ typedef unsigned int uint;
 // simulation parameters
 struct SimParams
 {
+	// Uniform Search Grid Parameters
+	uint3 gridSize; // Number of grid cells in each dimension (x,y,z)
+	uint numCells; // Total number of grid cells: gridSize.x*gridSize.y*gridSize.z
+	Real3 worldOrigin; // Minimum point of bounding box
+	Real3 worldSize; // Size of bounding box
+	Real3 cellSize; // Dimensions of a single grid cell = 2 * smoothingLength
+
+	// Neighbor Search Statistics
+	uint maxParticlesInCell; // Number of particles in most populated grid cell
+	uint maxNeighbors; // Largest number of particle interactions
+	uint minNeighbors; // Lowest number of particle interactions
+	uint aveNeighbors; // Average number of interactions for the system
+
+	// Parameters used in force computations
+	Real3 gravity;
+	Real smoothingLength; // m^3
+	Real overSmoothingLength; // 1/smoothingLength
+	Real rho0; // Reference density kg/m^3
+	Real overRho0; // = 1/rho0
+	Real massFluid; // Mass of a fluid particle, kg
+	Real massBoundary; // Mass of a boundary particle, kg
+	Real cs0; // Speed of sound (m/s) at reference density.
+
+	// Stuff associated with NVIDIA sample - to be deleted in future.
     Real3 colliderPos;
     Real  colliderRadius;
-    Real smoothingLength;
 
-    Real3 gravity;
     Real globalDamping;
     Real particleRadius;
-
-    uint3 gridSize;
-    uint numCells;
-    Real3 worldOrigin;
-    Real3 worldSize;
-    Real3 cellSize;
 
     uint numBodies;
     uint maxParticlesPerCell;
