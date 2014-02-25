@@ -38,7 +38,7 @@
 #define MAX_EPSILON_ERROR 5.00
 #define THRESHOLD         0.30
 
-#define NUM_PARTICLES   500
+#define NUM_PARTICLES   16000
 
 uint numParticles = 0;
 int numIterations = 0; // run until exit
