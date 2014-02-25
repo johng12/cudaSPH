@@ -45,6 +45,7 @@ ParticleSystem::ParticleSystem(uint numParticles) :
     m_params.smoothingLength = 1.0 / 64.0;
 
     Real3 domainMin = m_params.worldOrigin - 2.0 * m_params.smoothingLength;
+    m_params.worldOrigin = domainMin;
 	Real3 domainMax = domainMin + m_params.worldSize + 2.0 * m_params.smoothingLength;
     Real cellSize = 2.0 * m_params.smoothingLength;  // cell size equal to 2*particle smoothing length
 	m_params.cellSize = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
@@ -53,6 +54,7 @@ ParticleSystem::ParticleSystem(uint numParticles) :
 	m_gridSize.y = floor((domainMax.y - domainMin.y)/m_params.cellSize.y);
 	m_gridSize.z = floor((domainMax.z - domainMin.z)/m_params.cellSize.z);
 
+//	m_gridSize.x = m_gridSize.y = m_gridSize.z = 64;
     m_numGridCells = m_gridSize.x*m_gridSize.y*m_gridSize.z;
 
     m_params.gridSize = m_gridSize;
@@ -73,6 +75,7 @@ ParticleSystem::ParticleSystem(uint numParticles) :
     m_params.globalDamping = 1.0;
 
     _initialize(numParticles);
+
 }
 
 ParticleSystem::~ParticleSystem()
@@ -96,6 +99,12 @@ ParticleSystem::_initialize(int numParticles)
 
     m_hCellStart = new uint[m_numGridCells];
     memset(m_hCellStart, 0, m_numGridCells*sizeof(uint));
+
+    m_hParticleHash = new uint[m_numParticles];
+	memset(m_hParticleHash, 0, m_numParticles*sizeof(uint));
+
+	m_hParticleIndex = new uint[m_numParticles];
+		memset(m_hParticleIndex, 0, m_numParticles*sizeof(uint));
 
     m_hCellEnd = new uint[m_numGridCells];
     memset(m_hCellEnd, 0, m_numGridCells*sizeof(uint));
@@ -221,6 +230,16 @@ ParticleSystem::dumpGrid()
 }
 
 void
+ParticleSystem::dumpParameters()
+{
+    printf("world origin = %3.2f x %3.2f x %3.2f \n",m_params.worldOrigin.x,m_params.worldOrigin.y,m_params.worldOrigin.z);
+    printf("world size = %3.2f x %3.2f x %3.2f \n",m_params.worldSize.x,m_params.worldSize.y,m_params.worldSize.z);
+    printf("Cell Size = %5.4f x %5.4f x %5.4f \n",m_params.cellSize.x, m_params.cellSize.y,m_params.cellSize.z);
+    printf("Grid Size = %d x %d x %d \n",m_gridSize.x, m_gridSize.y,m_gridSize.z);
+    printf("Total Cells = %d \n",m_params.numCells);
+}
+
+void
 ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
 {
 	  FILE * pFile;
@@ -244,8 +263,9 @@ ParticleSystem::getArray(ParticleArray array)
 {
     assert(m_bInitialized);
 
-    Real *hdata = 0;
-    Real *ddata = 0;
+
+	Real *hdata = 0;
+	Real *ddata = 0;
 
     switch (array)
     {
@@ -253,16 +273,51 @@ ParticleSystem::getArray(ParticleArray array)
         case POSITION:
             hdata = m_hPos;
             ddata = m_dPos;
+            copyArrayFromDevice(hdata, ddata, 0,m_numParticles*4*sizeof(Real));
             break;
 
         case VELOCITY:
             hdata = m_hVel;
             ddata = m_dVel;
+            copyArrayFromDevice(hdata, ddata, 0,m_numParticles*4*sizeof(Real));
             break;
+
     }
 
-    copyArrayFromDevice(hdata, ddata, 0,m_numParticles*4*sizeof(Real));
     return hdata;
+
+}
+
+uint *
+ParticleSystem::getHash()
+{
+    assert(m_bInitialized);
+
+	uint *hdata = 0;
+	uint *ddata = 0;
+
+    hdata = m_hParticleHash;
+    ddata = m_dGridParticleHash;
+    copyArrayFromDevice(hdata,ddata,0,m_numParticles*sizeof(uint));
+
+    return hdata;
+
+}
+
+uint *
+ParticleSystem::getIndex()
+{
+    assert(m_bInitialized);
+
+	uint *hdata = 0;
+	uint *ddata = 0;
+
+    hdata = m_hParticleIndex;
+    ddata = m_dGridParticleIndex;
+    copyArrayFromDevice(hdata,ddata,0,m_numParticles*sizeof(uint));
+
+    return hdata;
+
 }
 
 void

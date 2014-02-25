@@ -37,12 +37,15 @@ class ParticleSystem
         {
             POSITION,
             VELOCITY,
+            HASH
         };
 
         void update(Real deltaTime);
         void reset(ParticleConfig config);
 
         Real *getArray(ParticleArray array);
+        uint *getHash();
+        uint *getIndex();
         void   setArray(ParticleArray array, const Real *data, int start, int count);
 
         int    getNumParticles() const
@@ -52,6 +55,7 @@ class ParticleSystem
 
         void dumpGrid();
         void dumpParticles(uint start, uint count, const char *fileName);
+        void dumpParameters();
 
         void setIterations(int i)
         {
@@ -131,6 +135,7 @@ class ParticleSystem
         Real *m_hVel;              // particle velocities
 
         uint  *m_hParticleHash;
+        uint  *m_hParticleIndex;
         uint  *m_hCellStart;
         uint  *m_hCellEnd;
 

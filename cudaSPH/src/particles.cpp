@@ -38,11 +38,9 @@
 #define MAX_EPSILON_ERROR 5.00
 #define THRESHOLD         0.30
 
-#define GRID_SIZE       64
-#define NUM_PARTICLES   16384
+#define NUM_PARTICLES   500
 
 uint numParticles = 0;
-uint3 gridSize;
 int numIterations = 0; // run until exit
 
 // simulation parameters
@@ -94,9 +92,11 @@ void runBenchmark(int iterations, char *exec_path)
     char buffer[32]; // The filename buffer.
 
     psystem->dumpParticles(0,psystem->getNumParticles(),"PART_0000.dat");
+
     for (int i = 0; i < iterations; ++i)
     {
         psystem->update(timestep);
+
         if(!(i%printStep)){
         	snprintf(buffer, sizeof(char) * 32, "PART%i.dat", i);
         	psystem->dumpParticles(0,psystem->getNumParticles(),buffer);
@@ -107,15 +107,15 @@ void runBenchmark(int iterations, char *exec_path)
     cudaDeviceSynchronize();
     sdkStopTimer(&timer);
     Real fAvgSeconds = ((Real)1.0e-3 * (Real)sdkGetTimerValue(&timer)/(Real)iterations);
-
+    psystem->dumpParameters();
     printf("particles, Throughput = %.4f KParticles/s, Time = %.5f s, Size = %u particles, NumDevsUsed = %u, Workgroup = %u\n",
            (1.0e-3 * numParticles)/fAvgSeconds, fAvgSeconds, numParticles, 1, 0);
 //    if (g_refFile)
 //    {
 //        printf("\nChecking result...\n\n");
 
-        Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
-        hPos = psystem->getArray(ParticleSystem::POSITION);
+//        Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
+//        hPos = psystem->getArray(ParticleSystem::POSITION);
 //                            0, sizeof(Real)*4*psystem->getNumParticles());
 
 //        Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
@@ -124,7 +124,7 @@ void runBenchmark(int iterations, char *exec_path)
 
 //
 
-        sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
+//        sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
 
 //        sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
 
@@ -151,7 +151,6 @@ main(int argc, char **argv)
     printf("%s Starting...\n\n", sSDKsample);
 
     numParticles = NUM_PARTICLES;
-    uint gridDim = GRID_SIZE;
     numIterations = 0;
 
     if (argc > 1)
@@ -161,11 +160,6 @@ main(int argc, char **argv)
             numParticles = getCmdLineArgumentInt(argc, (const char **)argv, "n");
         }
 
-        if (checkCmdLineFlag(argc, (const char **) argv, "grid"))
-        {
-            gridDim = getCmdLineArgumentInt(argc, (const char **) argv, "grid");
-        }
-
         if (checkCmdLineFlag(argc, (const char **)argv, "file"))
         {
             getCmdLineArgumentString(argc, (const char **)argv, "file", &g_refFile);
@@ -173,8 +167,6 @@ main(int argc, char **argv)
         }
     }
 
-    gridSize.x = gridSize.y = gridSize.z = gridDim;
-    printf("grid: %d x %d x %d = %d cells\n", gridSize.x, gridSize.y, gridSize.z, gridSize.x*gridSize.y*gridSize.z);
     printf("particles: %d\n", numParticles);
 
     bool benchmark = checkCmdLineFlag(argc, (const char **) argv, "benchmark") != 0;

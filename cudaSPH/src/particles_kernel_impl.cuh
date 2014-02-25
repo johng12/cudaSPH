@@ -119,9 +119,6 @@ __device__ int3 calcGridPos(Real3 p)
 // calculate address in grid from position (clamping to edges)
 __device__ uint calcGridHash(int3 gridPos)
 {
-    gridPos.x = gridPos.x & (params.gridSize.x-1);  // wrap grid, assumes size is power of 2
-    gridPos.y = gridPos.y & (params.gridSize.y-1);
-    gridPos.z = gridPos.z & (params.gridSize.z-1);
     return __umul24(__umul24(gridPos.z, params.gridSize.y), params.gridSize.x) + __umul24(gridPos.y, params.gridSize.x) + gridPos.x;
 }
 
@@ -327,7 +324,11 @@ void collideD(Real4 *newVel,               // output: new velocity
             for (int x=-1; x<=1; x++)
             {
                 int3 neighbourPos = gridPos + make_int3(x, y, z);
-                force += collideCell(neighbourPos, index, pos, vel, oldPos, oldVel, cellStart, cellEnd);
+                // Check to see if cell exists
+                if(cellExists(neighbourPos))
+                {
+                	force += collideCell(neighbourPos, index, pos, vel, oldPos, oldVel, cellStart, cellEnd);
+                }
             }
         }
     }
@@ -338,6 +339,22 @@ void collideD(Real4 *newVel,               // output: new velocity
     // write new velocity back to original unsorted location
     uint originalIndex = gridParticleIndex[index];
     newVel[originalIndex] = make_Real4(vel + force, 0.0);
+}
+
+__device__
+int cellExists(int3 gridPos)
+{
+	// Checks grid position against grid limits
+	if( (gridPos.x >= 0) && (gridPos.x <= params.gridSize.x) && (gridPos.y >= 0) && (gridPos.y <= params.gridSize.y)
+			&& (gridPos.z >= 0) && (gridPos.z <= params.gridSize.z))
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
+
 }
 
 #endif

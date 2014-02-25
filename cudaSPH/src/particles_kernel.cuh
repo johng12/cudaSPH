@@ -53,4 +53,5 @@ struct SimParams
     Real boundaryDamping;
 };
 
+__device__ int cellExists(int3 cellPos);
 #endif
