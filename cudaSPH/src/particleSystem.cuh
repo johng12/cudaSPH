@@ -23,10 +23,19 @@ extern "C"
 
     void setParameters(SimParams *hostParams);
 
-    void integrateSystem(Real *pos,
+    void predictorStep(Real *pos,
                          Real *vel,
+                         Real *pospre,
+                         Real *velpre,
                          Real deltaTime,
                          uint numParticles);
+
+    void correctorStep(Real *pos,
+                             Real *vel,
+                             Real *pospre,
+                             Real *velpre,
+                             Real deltaTime,
+                             uint numParticles);
 
     void calcHash(uint  *gridParticleHash,
                   uint  *gridParticleIndex,

@@ -36,13 +36,14 @@ texture<uint, 1, cudaReadModeElementType> cellEndTex;
 // simulation parameters in constant memory
 __constant__ SimParams params;
 
+__device__ int cellExists(int3 cellPos);
 
-struct integrate_functor
+struct integrate_corrector
 {
     Real deltaTime;
 
     __host__ __device__
-    integrate_functor(Real delta_time) : deltaTime(delta_time) {}
+    integrate_corrector(Real delta_time) : deltaTime(delta_time) {}
 
     template <typename Tuple>
     __device__
@@ -50,14 +51,99 @@ struct integrate_functor
     {
         volatile Real4 posData = thrust::get<0>(t);
         volatile Real4 velData = thrust::get<1>(t);
+        volatile Real4 posPreData = thrust::get<2>(t);
+        volatile Real4 velPreData = thrust::get<3>(t);
+
         Real3 pos = make_Real3(posData.x, posData.y, posData.z);
         Real3 vel = make_Real3(velData.x, velData.y, velData.z);
+        Real3 posPre = make_Real3(posPreData.x, posPreData.y, posPreData.z);
+		Real3 velPre = make_Real3(velPreData.x, velPreData.y, velPreData.z);
 
-        vel += params.gravity * deltaTime;
-        vel *= params.globalDamping;
+		//Update velocity a half time step
+        velPre = vel + params.gravity * deltaTime * 0.5;
+        velPre *= params.globalDamping;
 
-        // new position = old position + velocity * deltaTime
-        pos += vel * deltaTime;
+        // Update position a half time step
+        posPre = pos + vel * deltaTime * 0.5;
+
+        // set this to zero to disable collisions with cube sides
+#if 1
+
+        if (posPre.x > 1.0 - params.particleRadius)
+        {
+            posPre.x = 1.0 - params.particleRadius;
+            velPre.x *= params.boundaryDamping;
+        }
+
+        if (posPre.x < -1.0 + params.particleRadius)
+        {
+            posPre.x = -1.0 + params.particleRadius;
+            velPre.x *= params.boundaryDamping;
+        }
+
+        if (posPre.y > 1.0 - params.particleRadius)
+        {
+            posPre.y = 1.0 - params.particleRadius;
+            velPre.y *= params.boundaryDamping;
+        }
+
+        if (posPre.z > 1.0 - params.particleRadius)
+        {
+            posPre.z = 1.0 - params.particleRadius;
+            velPre.z *= params.boundaryDamping;
+        }
+
+        if (posPre.z < -1.0 + params.particleRadius)
+        {
+            posPre.z = -1.0 + params.particleRadius;
+            velPre.z *= params.boundaryDamping;
+        }
+
+#endif
+
+        if (posPre.y < -1.0 + params.particleRadius)
+        {
+            posPre.y = -1.0 + params.particleRadius;
+            velPre.y *= params.boundaryDamping;
+        }
+
+        // store position and velocity at half step
+        thrust::get<2>(t) = make_Real4(posPre,posPreData.w);
+        thrust::get<3>(t) = make_Real4(velPre,velPreData.w);
+    }
+};
+
+struct integrate_predictor
+{
+    Real deltaTime;
+
+    __host__ __device__
+    integrate_predictor(Real delta_time) : deltaTime(delta_time) {}
+
+    template <typename Tuple>
+    __device__
+    void operator()(Tuple t)
+    {
+        volatile Real4 posData = thrust::get<0>(t);
+        volatile Real4 velData = thrust::get<1>(t);
+        volatile Real4 posPreData = thrust::get<2>(t);
+        volatile Real4 velPreData = thrust::get<3>(t);
+
+        Real3 pos = make_Real3(posData.x, posData.y, posData.z);
+        Real3 vel = make_Real3(velData.x, velData.y, velData.z);
+        Real3 posPre = make_Real3(posPreData.x, posPreData.y, posPreData.z);
+		Real3 velPre = make_Real3(velPreData.x, velPreData.y, velPreData.z);
+
+		//Update velocity a half time step
+        velPre = vel + params.gravity * deltaTime * 0.5;
+        velPre *= params.globalDamping;
+
+        // Update position a half time step
+        posPre = pos + vel * deltaTime * 0.5;
+
+        // Correction Step
+        vel = velPre * 2.0 - vel;
+        pos = posPre * 2.0 - pos;
 
         // set this to zero to disable collisions with cube sides
 #if 1

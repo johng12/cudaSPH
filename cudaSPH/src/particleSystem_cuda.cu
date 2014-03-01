@@ -92,18 +92,40 @@ extern "C"
         numBlocks = iDivUp(n, numThreads);
     }
 
-    void integrateSystem(Real *pos,
+    void predictorStep(Real *pos,
                          Real *vel,
+                         Real *pospre,
+                         Real *velpre,
                          Real deltaTime,
                          uint numParticles)
     {
         thrust::device_ptr<Real4> d_pos4((Real4 *)pos);
         thrust::device_ptr<Real4> d_vel4((Real4 *)vel);
+        thrust::device_ptr<Real4> d_pospre4((Real4 *)pospre);
+        thrust::device_ptr<Real4> d_velpre4((Real4 *)velpre);
 
         thrust::for_each(
-            thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4)),
-            thrust::make_zip_iterator(thrust::make_tuple(d_pos4+numParticles, d_vel4+numParticles)),
-            integrate_functor(deltaTime));
+            thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4,d_pospre4,d_velpre4)),
+            thrust::make_zip_iterator(thrust::make_tuple(d_pos4+numParticles, d_vel4+numParticles,d_pospre4+numParticles,d_velpre4+numParticles)),
+            integrate_predictor(deltaTime));
+    }
+
+    void correctorStep(Real *pos,
+                         Real *vel,
+                         Real *pospre,
+                         Real *velpre,
+                         Real deltaTime,
+                         uint numParticles)
+    {
+        thrust::device_ptr<Real4> d_pos4((Real4 *)pos);
+        thrust::device_ptr<Real4> d_vel4((Real4 *)vel);
+        thrust::device_ptr<Real4> d_pospre4((Real4 *)pospre);
+		thrust::device_ptr<Real4> d_velpre4((Real4 *)velpre);
+
+        thrust::for_each(
+                thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4,d_pospre4,d_velpre4)),
+                thrust::make_zip_iterator(thrust::make_tuple(d_pos4+numParticles, d_vel4+numParticles,d_pospre4+numParticles,d_velpre4+numParticles)),
+                integrate_corrector(deltaTime));
     }
 
     void calcHash(uint  *gridParticleHash,

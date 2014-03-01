@@ -36,6 +36,8 @@ ParticleSystem::ParticleSystem(uint numParticles) :
     m_hVel(0),
     m_dPos(0),
     m_dVel(0),
+    m_dPosPre(0),
+	m_dVelPre(0),
     m_timer(NULL),
     m_solverIterations(1)
 {
@@ -94,8 +96,10 @@ ParticleSystem::_initialize(int numParticles)
     // allocate host storage
     m_hPos = new Real[m_numParticles*4];
     m_hVel = new Real[m_numParticles*4];
+    m_hRho = new Real[m_numParticles*4];
     memset(m_hPos, 0, m_numParticles*4*sizeof(Real));
     memset(m_hVel, 0, m_numParticles*4*sizeof(Real));
+    memset(m_hRho, 0, m_numParticles*4*sizeof(Real));
 
     m_hCellStart = new uint[m_numGridCells];
     memset(m_hCellStart, 0, m_numGridCells*sizeof(uint));
@@ -106,6 +110,9 @@ ParticleSystem::_initialize(int numParticles)
 	m_hParticleIndex = new uint[m_numParticles];
 		memset(m_hParticleIndex, 0, m_numParticles*sizeof(uint));
 
+	m_hParticleType = new uint[m_numParticles];
+			memset(m_hParticleType, 0, m_numParticles*sizeof(uint));
+
     m_hCellEnd = new uint[m_numGridCells];
     memset(m_hCellEnd, 0, m_numGridCells*sizeof(uint));
 
@@ -114,12 +121,17 @@ ParticleSystem::_initialize(int numParticles)
 
 	allocateArray((void **)&m_dPos, memSize);
     allocateArray((void **)&m_dVel, memSize);
+    allocateArray((void **)&m_dPosPre, memSize);
+	allocateArray((void **)&m_dVelPre, memSize);
+    allocateArray((void **)&m_dRho, memSize);
 
     allocateArray((void **)&m_dSortedPos, memSize);
     allocateArray((void **)&m_dSortedVel, memSize);
+    allocateArray((void **)&m_dSortedRho, memSize);
 
     allocateArray((void **)&m_dGridParticleHash, m_numParticles*sizeof(uint));
     allocateArray((void **)&m_dGridParticleIndex, m_numParticles*sizeof(uint));
+    allocateArray((void **)&m_dParticleType, m_numParticles*sizeof(uint));
 
     allocateArray((void **)&m_dCellStart, m_numGridCells*sizeof(uint));
     allocateArray((void **)&m_dCellEnd, m_numGridCells*sizeof(uint));
@@ -160,10 +172,12 @@ ParticleSystem::update(Real deltaTime)
     // update constants
     setParameters(&m_params);
 
-    // integrate
-    integrateSystem(
+    // predictor step
+    predictorStep(
         m_dPos,
         m_dVel,
+        m_dPosPre,
+        m_dVelPre,
         deltaTime,
         m_numParticles);
 
@@ -191,6 +205,9 @@ ParticleSystem::update(Real deltaTime)
         m_numParticles,
         m_numGridCells);
 
+    // update constants
+        setParameters(&m_params);
+
     // process collisions
     collide(
         m_dVel,
@@ -201,6 +218,53 @@ ParticleSystem::update(Real deltaTime)
         m_dCellEnd,
         m_numParticles,
         m_numGridCells);
+
+    // corrector step
+        correctorStep(
+            m_dPos,
+            m_dVel,
+            m_dPosPre,
+            m_dVelPre,
+            deltaTime,
+            m_numParticles);
+
+        // calculate grid hash
+        calcHash(
+            m_dGridParticleHash,
+            m_dGridParticleIndex,
+            m_dPos,
+            m_numParticles);
+
+        // sort particles based on hash
+        sortParticles(m_dGridParticleHash, m_dGridParticleIndex, m_numParticles);
+
+        // reorder particle arrays into sorted order and
+        // find start and end of each cell
+        reorderDataAndFindCellStart(
+            m_dCellStart,
+            m_dCellEnd,
+            m_dSortedPos,
+            m_dSortedVel,
+            m_dGridParticleHash,
+            m_dGridParticleIndex,
+            m_dPos,
+            m_dVel,
+            m_numParticles,
+            m_numGridCells);
+
+        // update constants
+            setParameters(&m_params);
+
+        // process collisions
+        collide(
+            m_dVel,
+            m_dSortedPos,
+            m_dSortedVel,
+            m_dGridParticleIndex,
+            m_dCellStart,
+            m_dCellEnd,
+            m_numParticles,
+            m_numGridCells);
 
 }
 

@@ -37,6 +37,7 @@ class ParticleSystem
         {
             POSITION,
             VELOCITY,
+            DENSITY,
             HASH
         };
 
@@ -133,18 +134,25 @@ class ParticleSystem
         // CPU data
         Real *m_hPos;              // particle positions
         Real *m_hVel;              // particle velocities
+        Real *m_hRho;		   // particle densities
 
         uint  *m_hParticleHash;
         uint  *m_hParticleIndex;
+        uint  *m_hParticleType;
         uint  *m_hCellStart;
         uint  *m_hCellEnd;
 
         // GPU data
         Real *m_dPos;
         Real *m_dVel;
+        Real *m_dPosPre;
+        Real *m_dVelPre;
+        Real *m_dRho;
+        uint *m_dParticleType;
 
         Real *m_dSortedPos;
         Real *m_dSortedVel;
+        Real *m_dSortedRho;
 
         // grid data for sorting method
         uint  *m_dGridParticleHash; // grid hash value for each particle

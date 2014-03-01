@@ -31,7 +31,7 @@ struct SimParams
 {
 	// Uniform Search Grid Parameters
 	uint3 gridSize; // Number of grid cells in each dimension (x,y,z)
-	uint numCells; // Total number of grid cells: gridSize.x*gridSize.y*gridSize.z
+	uint numCells; // Total number of grid cells = gridSize.x*gridSize.y*gridSize.z
 	Real3 worldOrigin; // Minimum point of bounding box
 	Real3 worldSize; // Size of bounding box
 	Real3 cellSize; // Dimensions of a single grid cell = 2 * smoothingLength
@@ -51,6 +51,7 @@ struct SimParams
 	Real massFluid; // Mass of a fluid particle, kg
 	Real massBoundary; // Mass of a boundary particle, kg
 	Real cs0; // Speed of sound (m/s) at reference density.
+	Real wendland_a1,wendland_a2; // Constants for the Wendland kernel
 
 	// Stuff associated with NVIDIA sample - to be deleted in future.
     Real3 colliderPos;
@@ -69,5 +70,4 @@ struct SimParams
     Real boundaryDamping;
 };
 
-__device__ int cellExists(int3 cellPos);
 #endif
