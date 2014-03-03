@@ -42,7 +42,7 @@ inline __host__ __device__ Real3 make_Real3(uint3 a){return make_double3(a);}
 inline __host__ __device__ Real4 make_Real4(double a, double b, double c,double d){return make_double4(a,b,c,d);}
 inline __host__ __device__ Real4 make_Real4(double s){return make_double4(s);}
 inline __host__ __device__ Real4 make_Real4(double3 a){return make_double4(a);}
-inline __host__ __device__ Real4 make_Real4(double3 a, float w){return make_double4(a, w);}
+inline __host__ __device__ Real4 make_Real4(double3 a, double w){return make_double4(a, w);}
 inline __host__ __device__ Real4 make_Real4(int4 a){return make_double4(a);}
 inline __host__ __device__ Real4 make_Real4(uint4 a){return make_double4(a);}
 

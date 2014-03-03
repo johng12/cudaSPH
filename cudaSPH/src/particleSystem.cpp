@@ -153,9 +153,15 @@ ParticleSystem::_finalize()
     delete [] m_hCellStart;
     delete [] m_hCellEnd;
 
+    freeArray(m_dPos);
     freeArray(m_dVel);
+    freeArray(m_dPosPre);
+    freeArray(m_dVelPre);
+    freeArray(m_dRho);
+
     freeArray(m_dSortedPos);
     freeArray(m_dSortedVel);
+    freeArray(m_dSortedRho);
 
     freeArray(m_dGridParticleHash);
     freeArray(m_dGridParticleIndex);
@@ -185,7 +191,7 @@ ParticleSystem::update(Real deltaTime)
     calcHash(
         m_dGridParticleHash,
         m_dGridParticleIndex,
-        m_dPos,
+        m_dPosPre,
         m_numParticles);
 
     // sort particles based on hash
@@ -200,8 +206,8 @@ ParticleSystem::update(Real deltaTime)
         m_dSortedVel,
         m_dGridParticleHash,
         m_dGridParticleIndex,
-        m_dPos,
-        m_dVel,
+        m_dPosPre,
+        m_dVelPre,
         m_numParticles,
         m_numGridCells);
 

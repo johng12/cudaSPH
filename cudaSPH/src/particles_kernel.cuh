@@ -42,6 +42,10 @@ struct SimParams
 	uint minNeighbors; // Lowest number of particle interactions
 	uint aveNeighbors; // Average number of interactions for the system
 
+	// Types of Particles
+	int FLUID;
+	int BOUNDARY;
+
 	// Parameters used in force computations
 	Real3 gravity;
 	Real smoothingLength; // m^3
@@ -52,6 +56,9 @@ struct SimParams
 	Real massBoundary; // Mass of a boundary particle, kg
 	Real cs0; // Speed of sound (m/s) at reference density.
 	Real wendland_a1,wendland_a2; // Constants for the Wendland kernel
+	Real four_h_squared;
+	Real eta2;
+	Real visco;
 
 	// Stuff associated with NVIDIA sample - to be deleted in future.
     Real3 colliderPos;

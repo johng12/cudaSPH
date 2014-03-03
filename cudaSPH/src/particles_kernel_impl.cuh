@@ -38,6 +38,24 @@ __constant__ SimParams params;
 
 __device__ int cellExists(int3 cellPos);
 
+//__device__ void particle_particle_interaction(Real4 *pospres1, Real4 *velrhop1, Real massp1,
+//															  Real4 *pospres2, Real4 *velrhop2, Real massp2,
+//															  Real3 &acep1, Real3 &arp1, Real &visc);
+
+__device__ void interact_with_cell(int3 gridPos,
+		uint index,
+		Real  massp1,
+		int   *type,
+		Real4 pospres1,
+		Real4 velrhop1,
+		Real4 *pospres,
+		Real4 *velrhop,
+		Real4 &acep1,
+		Real4 &arp1,
+		Real  &visc,
+		uint *cellStart,
+		uint *cellEnd);
+
 struct integrate_corrector
 {
     Real deltaTime;
@@ -341,7 +359,198 @@ Real3 collideSpheres(Real3 posA, Real3 posB,
     return force;
 }
 
+__device__
+void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
+								   Real4 pospres2, Real4 velrhop2, Real massp2,
+								   Real4 acep1, Real4 arp1, Real visc)
+{
+	Real drx = pospres1.x - pospres2.x;
+	Real dry = pospres1.y - pospres2.y;
+	Real drz = pospres1.z - pospres2.z;
+	const Real dvx = velrhop1.x - velrhop2.x, dvy =  velrhop1.y - velrhop2.y, dvz =  velrhop1.z - velrhop2.z;
+	Real rr2 = drx*drx + dry*dry + drz*drz;
 
+	if(rr2<=params.four_h_squared && rr2 >=1e-18)
+	{
+		const Real prrhop2 = pospres2.w/(velrhop2.w * velrhop2.w);
+		const Real prrhop1 = pospres1.w/(velrhop1.w * velrhop1.w);
+		Real prs = prrhop1 + prrhop2;
+
+		Real wab,frx,fry,frz;
+
+		{//====== Kernel =====
+			const Real rad=sqrt(rr2);
+			const Real qq=rad * params.overSmoothingLength;
+			Real fac;
+
+			const Real wqq = 2.0 * qq + 1.0;
+			const Real wqq1 = 1.0 - 0.5 * qq;
+			const Real wqq2 = wqq1 * wqq1;
+			wab = params.wendland_a1 * wqq * wqq2 * wqq2;
+			fac = params.wendland_a2 * qq * wqq2 * wqq1 / rad;
+
+			frx = fac * drx; fry = fac * dry; frz = fac * drz;
+		}
+
+		{// Acceleration
+			const Real p_vpm = -prs * massp2;
+			acep1.x += p_vpm * frx; acep1.y = p_vpm * fry; acep1.z = p_vpm * frz;
+		}
+
+		{// Density Derivative
+
+			arp1 += massp2 * (dvx * frx + dvy * fry + dvz * frz);
+		}
+
+		const Real csoun1 = velrhop1.w * params.overRho0;
+		const Real csoun2 = velrhop2.w * params.overRho0;
+	    const Real cbar=(params.cs0 * (csoun1 * csoun1 * csoun1)+ params.cs0 *(csoun2 * csoun2 * csoun2) ) * 0.5;
+
+	    //===== DeltaSPH =====
+//	    if(tdelta==DELTA_DBC || tdelta==DELTA_DBCExt)
+//	    {
+//			const Real rhop1over2=rhopp1/velrhop2.w;
+//			const Real visc_densi=CTE.delta2h*cbar*(rhop1over2-1)/(rr2+CTE.eta2);
+//			const Real dot3=(drx*frx+dry*fry+drz*frz);
+//			const Real delta=visc_densi*dot3*massp2;
+//			deltap1=(bound? FLT_MAX: deltap1+delta);
+//	    }
+
+	    Real robar = ( velrhop1.w + velrhop2.w ) * 0.5;
+
+	    {//===== Viscosity =====
+			const Real dot=drx*dvx + dry*dvy + drz*dvz;
+			const Real dot_rr2=dot/(rr2 + params.eta2);
+			//-Artificial viscosity.
+	//		if(tvisco==VISCO_Artificial && dot<0)
+			if( dot < 0.0 )
+			{
+			  const Real amubar = params.smoothingLength * dot_rr2;
+			  const Real pi_visc = (-params.visco * cbar * amubar / robar) * massp2;
+			  acep1.x-= pi_visc * frx; acep1.y-=pi_visc*fry; acep1.z-=pi_visc*frz;
+			}
+	     }
+
+	}
+}
+
+__device__
+void interact_with_cell(int3 gridPos,
+						uint index,
+						Real  massp1,
+						int   *type,
+						Real4 pospres1,
+						Real4 velrhop1,
+						Real4 *pospres,
+						Real4 *velrhop,
+						Real3 acep1,
+						Real arp1,
+						Real  visc,
+						uint *cellStart,
+						uint *cellEnd)
+{
+	uint gridHash = calcGridHash(gridPos);
+
+	// get start of bucket for this cell
+	uint startIndex = FETCH(cellStart, gridHash);
+
+	if (startIndex != 0xffffffff)          // cell is not empty
+	{
+		// iterate over particles in this cell
+		uint endIndex = FETCH(cellEnd, gridHash);
+
+		for (uint j=startIndex; j<endIndex; j++)
+		{
+			if (j != index)                // check not interacting with self
+			{
+				Real4 pospres2 = FETCH(pospres,j);
+				Real4 velrhop2 = FETCH(velrhop,j);
+				Real massp2;
+				int type2 = FETCH(type,j);
+				if(type2 == params.FLUID)
+				{
+					massp2 = params.massFluid;
+				}
+				else
+				{
+					massp2 = params.massBoundary;
+				}
+
+				// collide two particles
+				particle_particle_interaction(pospres1, velrhop1, massp1,
+											  pospres2, velrhop2, massp2,
+											  acep1, arp1, visc);
+
+			}
+		}
+	}
+
+}
+
+__global__
+void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration and drho_dt values
+								   Real4 *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
+								   Real4 *pospres, // input: sorted particle positions
+								   uint *gridParticleIndex, // input: sorted particle indicies
+								   uint *cellStart,
+								   uint *cellEnd,
+								   int  *type,
+								   Real *viscdt, // output: max time step for adaptive time stepping
+								   uint numParticles)
+
+{
+    uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
+
+    if (index >= numParticles) return;
+
+    // read particle data from sorted arrays
+    Real4 pospres1 = FETCH(pospres,index);
+    Real4 velrhop1 = FETCH(velrhop,index);
+    Real  massp1 = params.massFluid;
+    Real  visc = viscdt[index];
+
+    // get address in grid
+    Real3 pos = make_Real3(pospres1.x,pospres1.y,pospres1.z);
+    int3 gridPos = calcGridPos(pos);
+
+    // examine neighboring cells
+    Real3 acep1 = make_Real3(0.0);
+    Real  arp1 = 0.0;
+
+    for (int z=-1; z<=1; z++)
+    {
+        for (int y=-1; y<=1; y++)
+        {
+            for (int x=-1; x<=1; x++)
+            {
+                int3 neighbourPos = gridPos + make_int3(x, y, z);
+
+                // Check to see if cell exists
+                if(cellExists(neighbourPos))
+                {
+                	interact_with_cell(gridPos,
+                					   index,
+                					   massp1,
+                					   type,
+                					   pospres1,
+                					   velrhop1,
+                					   pospres,
+                					   velrhop,
+                					   acep1,
+                					   arp1,
+                					   visc,
+                					   cellStart,
+                					   cellEnd);
+                }
+            }
+        }
+    }
+
+    // write new velocity back to original unsorted location
+    uint originalIndex = gridParticleIndex[index];
+    ace_drhodt[originalIndex] = make_Real4(acep1,arp1);
+    viscdt[index] = visc;
+}
 
 // collide a particle against all other particles in a given cell
 __device__
