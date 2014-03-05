@@ -92,17 +92,17 @@ extern "C"
         numBlocks = iDivUp(n, numThreads);
     }
 
-    void predictorStep(Real *pos,
-                         Real *vel,
-                         Real *pospre,
-                         Real *velpre,
+    void predictorStep(Real *pospres,
+                         Real *velrhop,
+                         Real *pospres_pre,
+                         Real *velrhop_pre,
                          Real deltaTime,
                          uint numParticles)
     {
-        thrust::device_ptr<Real4> d_pos4((Real4 *)pos);
-        thrust::device_ptr<Real4> d_vel4((Real4 *)vel);
-        thrust::device_ptr<Real4> d_pospre4((Real4 *)pospre);
-        thrust::device_ptr<Real4> d_velpre4((Real4 *)velpre);
+        thrust::device_ptr<Real4> d_pos4((Real4 *)pospres);
+        thrust::device_ptr<Real4> d_vel4((Real4 *)velrhop);
+        thrust::device_ptr<Real4> d_pospre4((Real4 *)pospres_pre);
+        thrust::device_ptr<Real4> d_velpre4((Real4 *)velrhop_pre);
 
         thrust::for_each(
             thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4,d_pospre4,d_velpre4)),
@@ -187,6 +187,26 @@ extern "C"
 #endif
     }
 
+    void pre_interaction(Real *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+			   Real *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
+			   Real *pospres, // input: sorted particle positions and pressures
+			   Real *viscdt, // output: max time step for adaptive time stepping
+			   uint numParticles)
+    {
+        uint numThreads, numBlocks;
+        computeGridSize(numParticles, 256, numBlocks, numThreads);
+
+        // execute the kernel
+        pre_interactionD<<< numBlocks, numThreads >>>((Real4 *) ace_drhodt,
+                                               (Real4 *) velrhop,
+                                               (Real4 *) pospres,
+                                               viscdt,
+                                               numParticles);
+
+        // check if kernel invocation generated an error
+        getLastCudaError("Kernel execution failed");
+    }
+
     void collide(Real *newVel,
                  Real *sortedPos,
                  Real *sortedVel,
@@ -233,6 +253,43 @@ extern "C"
         thrust::sort_by_key(thrust::device_ptr<uint>(dGridParticleHash),
                             thrust::device_ptr<uint>(dGridParticleHash + numParticles),
                             thrust::device_ptr<uint>(dGridParticleIndex));
+    }
+
+    template < typename T >
+    T cuda_sum(T *data, uint numElements)
+    {
+    	T result = thrust::reduce(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+    	return result;
+    }
+
+    template < typename T >
+    T cuda_max(T *data, uint numElements)
+    {
+    	T result = thrust::max_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+    	return result;
+    }
+
+    template < typename T >
+    T cuda_min(T *data, uint numElements)
+    {
+    	T result = thrust::min_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+		return result;
+    }
+
+    Real
+    get_time_step(Real *max_acceleration, Real *max_sound_speed, Real *max_visc_dt)
+    {
+      //-dt1 depends on force per unit mass.
+      const Real dt1=(max_acceleration? (sqrt(params.smoothingLength)/sqrt(sqrt(max_acceleration))): FLT_MAX);
+
+      //-dt2 combines the Courant and the viscous time-step controls.
+      const Real dt2=(max_sound_speed||max_visc_dt? (params.smoothingLength/(max_sound_speed+params.smoothingLength*max_visc_dt)): FLT_MAX);
+
+      //-dt new value of time step.
+      Real dt=params.cfl_number*min(dt1,dt2);
+      //if(DtFixed)dt=DtFixed->GetDt(TimeStep,dt);
+      if(dt < dt_min){ dt = dt_min; }
+      return(dt);
     }
 
 }   // extern "C"

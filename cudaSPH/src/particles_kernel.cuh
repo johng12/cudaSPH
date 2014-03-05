@@ -59,6 +59,14 @@ struct SimParams
 	Real four_h_squared;
 	Real eta2;
 	Real visco;
+	Real cfl_number;
+
+	// Tait EOS parameters
+	Real gamma;
+	Real Bcoeff;
+
+	// Simulation type (1D, 2D, or 3D)
+	bool simulate_2D;
 
 	// Stuff associated with NVIDIA sample - to be deleted in future.
     Real3 colliderPos;
@@ -68,6 +76,8 @@ struct SimParams
     Real particleRadius;
 
     uint numBodies;
+    uint num_particles;
+    uint num_bdry;
     uint maxParticlesPerCell;
 
     Real spring;

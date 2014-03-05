@@ -38,23 +38,48 @@ __constant__ SimParams params;
 
 __device__ int cellExists(int3 cellPos);
 
-//__device__ void particle_particle_interaction(Real4 *pospres1, Real4 *velrhop1, Real massp1,
-//															  Real4 *pospres2, Real4 *velrhop2, Real massp2,
-//															  Real3 &acep1, Real3 &arp1, Real &visc);
+struct integrate_predictor
+{
+    Real deltaTime;
 
-__device__ void interact_with_cell(int3 gridPos,
-		uint index,
-		Real  massp1,
-		int   *type,
-		Real4 pospres1,
-		Real4 velrhop1,
-		Real4 *pospres,
-		Real4 *velrhop,
-		Real4 &acep1,
-		Real4 &arp1,
-		Real  &visc,
-		uint *cellStart,
-		uint *cellEnd);
+    __host__ __device__
+    integrate_predictor(Real delta_time) : deltaTime(delta_time) {}
+
+    template <typename Tuple>
+    __device__
+    void operator()(Tuple t)
+    {
+        volatile Real4 posData = thrust::get<0>(t); // position and pressure data
+        volatile Real4 velData = thrust::get<1>(t); // velocity and density data
+        volatile Real4 posPreData = thrust::get<2>(t); // holds position and pressure data from predictor step
+        volatile Real4 velPreData = thrust::get<3>(t); // holds velocity and density data from predictor step
+        Real4 accelData = thrust::get<4>(t); // holds dv_dt and drho_dt data
+
+        Real3 pos = make_Real3(posData.x, posData.y, posData.z);
+        Real3 vel = make_Real3(velData.x, velData.y, velData.z);
+        Real rhop = velData.w;
+
+        Real3 posPre = make_Real3(posPreData.x, posPreData.y, posPreData.z);
+		Real3 velPre = make_Real3(velPreData.x, velPreData.y, velPreData.z);
+		Real rhopPre = velPreData.w;
+
+		Real3 dvdt = make_Real3(accelData.x,accelData.y,accelData.z);
+		Real drhodt = accelData.w;
+
+		// Update density a half time step
+		rhopPre = rhop + drhodt * deltaTime * 0.5;
+
+		//Update velocity a half time step
+        velPre = vel + dvdt * deltaTime * 0.5;
+
+        // Update position a half time step
+        posPre = pos + vel * deltaTime * 0.5;
+
+        // store density, velocity, and position at half step
+        thrust::get<2>(t) = make_Real4(posPre,posPreData.w);
+        thrust::get<3>(t) = make_Real4(velPre,rhopPre);
+    }
+};
 
 struct integrate_corrector
 {
@@ -71,142 +96,36 @@ struct integrate_corrector
         volatile Real4 velData = thrust::get<1>(t);
         volatile Real4 posPreData = thrust::get<2>(t);
         volatile Real4 velPreData = thrust::get<3>(t);
+        Real4 accelData = thrust::get<4>(t);
 
         Real3 pos = make_Real3(posData.x, posData.y, posData.z);
-        Real3 vel = make_Real3(velData.x, velData.y, velData.z);
-        Real3 posPre = make_Real3(posPreData.x, posPreData.y, posPreData.z);
+		Real3 vel = make_Real3(velData.x, velData.y, velData.z);
+		Real rhop = velData.w;
+
+		Real3 posPre = make_Real3(posPreData.x, posPreData.y, posPreData.z);
 		Real3 velPre = make_Real3(velPreData.x, velPreData.y, velPreData.z);
+		Real rhopPre = velPreData.w;
+
+		Real3 dvdt = make_Real3(accelData.x,accelData.y,accelData.z);
+		Real drhodt = accelData.w;
+
+		// Update density a half step
+		rhopPre = rhop + drhodt * deltaTime * 0.5;
 
 		//Update velocity a half time step
-        velPre = vel + params.gravity * deltaTime * 0.5;
-        velPre *= params.globalDamping;
-
-        // Update position a half time step
-        posPre = pos + vel * deltaTime * 0.5;
-
-        // set this to zero to disable collisions with cube sides
-#if 1
-
-        if (posPre.x > 1.0 - params.particleRadius)
-        {
-            posPre.x = 1.0 - params.particleRadius;
-            velPre.x *= params.boundaryDamping;
-        }
-
-        if (posPre.x < -1.0 + params.particleRadius)
-        {
-            posPre.x = -1.0 + params.particleRadius;
-            velPre.x *= params.boundaryDamping;
-        }
-
-        if (posPre.y > 1.0 - params.particleRadius)
-        {
-            posPre.y = 1.0 - params.particleRadius;
-            velPre.y *= params.boundaryDamping;
-        }
-
-        if (posPre.z > 1.0 - params.particleRadius)
-        {
-            posPre.z = 1.0 - params.particleRadius;
-            velPre.z *= params.boundaryDamping;
-        }
-
-        if (posPre.z < -1.0 + params.particleRadius)
-        {
-            posPre.z = -1.0 + params.particleRadius;
-            velPre.z *= params.boundaryDamping;
-        }
-
-#endif
-
-        if (posPre.y < -1.0 + params.particleRadius)
-        {
-            posPre.y = -1.0 + params.particleRadius;
-            velPre.y *= params.boundaryDamping;
-        }
-
-        // store position and velocity at half step
-        thrust::get<2>(t) = make_Real4(posPre,posPreData.w);
-        thrust::get<3>(t) = make_Real4(velPre,velPreData.w);
-    }
-};
-
-struct integrate_predictor
-{
-    Real deltaTime;
-
-    __host__ __device__
-    integrate_predictor(Real delta_time) : deltaTime(delta_time) {}
-
-    template <typename Tuple>
-    __device__
-    void operator()(Tuple t)
-    {
-        volatile Real4 posData = thrust::get<0>(t);
-        volatile Real4 velData = thrust::get<1>(t);
-        volatile Real4 posPreData = thrust::get<2>(t);
-        volatile Real4 velPreData = thrust::get<3>(t);
-
-        Real3 pos = make_Real3(posData.x, posData.y, posData.z);
-        Real3 vel = make_Real3(velData.x, velData.y, velData.z);
-        Real3 posPre = make_Real3(posPreData.x, posPreData.y, posPreData.z);
-		Real3 velPre = make_Real3(velPreData.x, velPreData.y, velPreData.z);
-
-		//Update velocity a half time step
-        velPre = vel + params.gravity * deltaTime * 0.5;
-        velPre *= params.globalDamping;
+        velPre = vel + dvdt * deltaTime * 0.5;
 
         // Update position a half time step
         posPre = pos + vel * deltaTime * 0.5;
 
         // Correction Step
+        rhop = rhopPre * 2.0 - rhop;
         vel = velPre * 2.0 - vel;
         pos = posPre * 2.0 - pos;
 
-        // set this to zero to disable collisions with cube sides
-#if 1
-
-        if (pos.x > 1.0 - params.particleRadius)
-        {
-            pos.x = 1.0 - params.particleRadius;
-            vel.x *= params.boundaryDamping;
-        }
-
-        if (pos.x < -1.0 + params.particleRadius)
-        {
-            pos.x = -1.0 + params.particleRadius;
-            vel.x *= params.boundaryDamping;
-        }
-
-        if (pos.y > 1.0 - params.particleRadius)
-        {
-            pos.y = 1.0 - params.particleRadius;
-            vel.y *= params.boundaryDamping;
-        }
-
-        if (pos.z > 1.0 - params.particleRadius)
-        {
-            pos.z = 1.0 - params.particleRadius;
-            vel.z *= params.boundaryDamping;
-        }
-
-        if (pos.z < -1.0 + params.particleRadius)
-        {
-            pos.z = -1.0 + params.particleRadius;
-            vel.z *= params.boundaryDamping;
-        }
-
-#endif
-
-        if (pos.y < -1.0 + params.particleRadius)
-        {
-            pos.y = -1.0 + params.particleRadius;
-            vel.y *= params.boundaryDamping;
-        }
-
         // store new position and velocity
         thrust::get<0>(t) = make_Real4(pos, posData.w);
-        thrust::get<1>(t) = make_Real4(vel, velData.w);
+        thrust::get<1>(t) = make_Real4(vel, rhop);
     }
 };
 
@@ -429,25 +348,27 @@ void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 			  const Real pi_visc = (-params.visco * cbar * amubar / robar) * massp2;
 			  acep1.x-= pi_visc * frx; acep1.y-=pi_visc*fry; acep1.z-=pi_visc*frz;
 			}
+
+			visc=max(dot_rr2,visc);  //ViscDt=max(dot/(rr2+Eta2),ViscDt); // <----- Reduction to only one value. Used for adaptive time stepping.
 	     }
 
 	}
 }
 
 __device__
-void interact_with_cell(int3 gridPos,
-						uint index,
-						Real  massp1,
-						int   *type,
-						Real4 pospres1,
-						Real4 velrhop1,
-						Real4 *pospres,
-						Real4 *velrhop,
-						Real3 acep1,
-						Real arp1,
-						Real  visc,
-						uint *cellStart,
-						uint *cellEnd)
+void interact_with_cell(int3 gridPos, //
+						uint index, // index of particle i
+						Real  massp1, // mass of particle i
+						int   *type, // Ordered particle type data for all particles
+						Real4 pospres1, // position vector and pressure of particle i
+						Real4 velrhop1, // velocity and density of particle i
+						Real4 *pospres, // Ordered position and pressure data for all particles
+						Real4 *velrhop, // Ordered velocity and density data for all particles
+						Real3 acep1, // Acceleration accumulator for particle i
+						Real arp1, // Density derivative accumulator for particle i
+						Real  visc, // Max dt for particle i based on viscous considerations
+						uint *cellStart, // Index of 1st particle in each grid cell
+						uint *cellEnd) // Index of last particle in each grid cell
 {
 	uint gridHash = calcGridHash(gridPos);
 
@@ -488,13 +409,13 @@ void interact_with_cell(int3 gridPos,
 }
 
 __global__
-void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration and drho_dt values
+void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
 								   Real4 *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
-								   Real4 *pospres, // input: sorted particle positions
+								   Real4 *pospres, // input: sorted particle positions and pressures
 								   uint *gridParticleIndex, // input: sorted particle indicies
 								   uint *cellStart,
 								   uint *cellEnd,
-								   int  *type,
+								   int  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
 								   Real *viscdt, // output: max time step for adaptive time stepping
 								   uint numParticles)
 
@@ -506,16 +427,16 @@ void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration an
     // read particle data from sorted arrays
     Real4 pospres1 = FETCH(pospres,index);
     Real4 velrhop1 = FETCH(velrhop,index);
-    Real  massp1 = params.massFluid;
-    Real  visc = viscdt[index];
+    Real massp1 = (FETCH(type,index)=params.FLUID? params.massFluid: params.massBoundary);
+    Real  visc = viscdt[index]; // Holds max dt value based on viscous considerations
 
     // get address in grid
     Real3 pos = make_Real3(pospres1.x,pospres1.y,pospres1.z);
     int3 gridPos = calcGridPos(pos);
 
     // examine neighboring cells
-    Real3 acep1 = make_Real3(0.0);
-    Real  arp1 = 0.0;
+    Real3 acep1 = make_Real3(0.0); // Acceleration accumulator for particle(index)
+    Real  arp1 = 0.0; // drho_dt accumulator for particle(index)
 
     for (int z=-1; z<=1; z++)
     {
@@ -550,6 +471,49 @@ void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration an
     uint originalIndex = gridParticleIndex[index];
     ace_drhodt[originalIndex] = make_Real4(acep1,arp1);
     viscdt[index] = visc;
+}
+
+__global__
+void pre_interactionD(Real4 *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+				   Real4 *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
+				   Real4 *pospres, // input: sorted particle positions and pressures
+				   Real *viscdt, // output: max time step for adaptive time stepping
+				   uint numParticles)
+
+{
+    uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
+
+    if (index >= numParticles) return;
+
+    ace_drhodt[index] = 0.0; // initialize acceleration accumulators to zero
+    viscdt[index] = 0.0; // initialize viscous time step tracker to zero
+    Real4 pospres1 = FETCH(pospres,index);
+    Real4 velrhop1 = FETCH(velrhop,index);
+
+    pospres1.w = params.Bcoeff * ( pow(velrhop1.w * params.overRho0,params.gamma) - 1.0 ); // Compute particle pressure using Tait EOS
+    pospres[index] = pospres1;
+}
+
+__global__
+void zero_accelerationD(Real4 *ace_drhodt)
+{
+	uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
+
+	if (index >= params.num_bdry) return;
+
+	// set acceleration of static boundary particles to zero.
+	ace_drhodt[index].x = 0.0; ace_drhodt[index].y = 0.0; ace_drhodt[index].z = 0.0;
+}
+
+__global__
+void zero_ycomponentD(Real4 *data, uint numParticles)
+{
+	uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
+
+	if (index >= numParticles) return;
+
+	// set acceleration of static boundary particles to zero.
+	data[index].y = 0.0;
 }
 
 // collide a particle against all other particles in a given cell

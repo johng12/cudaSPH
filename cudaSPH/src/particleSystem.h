@@ -41,7 +41,7 @@ class ParticleSystem
             HASH
         };
 
-        void update(Real deltaTime);
+        Real update(Real deltaTime);
         void reset(ParticleConfig config);
 
         Real *getArray(ParticleArray array);
@@ -51,7 +51,7 @@ class ParticleSystem
 
         int    getNumParticles() const
         {
-            return m_numParticles;
+            return numParticles_;
         }
 
         void dumpGrid();
@@ -65,58 +65,58 @@ class ParticleSystem
 
         void setDamping(Real x)
         {
-            m_params.globalDamping = x;
+            h_params_.globalDamping = x;
         }
         void setGravity(Real x)
         {
-            m_params.gravity = make_Real3(0.0, x, 0.0);
+            h_params_.gravity = make_Real3(0.0, x, 0.0);
         }
 
         void setCollideSpring(Real x)
         {
-            m_params.spring = x;
+            h_params_.spring = x;
         }
         void setCollideDamping(Real x)
         {
-            m_params.damping = x;
+            h_params_.damping = x;
         }
         void setCollideShear(Real x)
         {
-            m_params.shear = x;
+            h_params_.shear = x;
         }
         void setCollideAttraction(Real x)
         {
-            m_params.attraction = x;
+            h_params_.attraction = x;
         }
 
         void setColliderPos(Real3 x)
         {
-            m_params.colliderPos = x;
+            h_params_.colliderPos = x;
         }
 
         Real getParticleRadius()
         {
-            return m_params.particleRadius;
+            return h_params_.particleRadius;
         }
         Real3 getColliderPos()
         {
-            return m_params.colliderPos;
+            return h_params_.colliderPos;
         }
         Real getColliderRadius()
         {
-            return m_params.colliderRadius;
+            return h_params_.colliderRadius;
         }
         uint3 getGridSize()
         {
-            return m_params.gridSize;
+            return h_params_.gridSize;
         }
         Real3 getWorldOrigin()
         {
-            return m_params.worldOrigin;
+            return h_params_.worldOrigin;
         }
         Real3 getCellSize()
         {
-            return m_params.cellSize;
+            return h_params_.cellSize;
         }
 
     protected: // methods
@@ -129,43 +129,51 @@ class ParticleSystem
 
     protected: // data
         bool m_bInitialized;
-        uint m_numParticles;
+        uint numParticles_;
 
-        // CPU data
-        Real *m_hPos;              // particle positions
-        Real *m_hVel;              // particle velocities
-        Real *m_hRho;		   // particle densities
+        // CPU particle data
+        Real *h_pospres_;              // particle positions and pressures
+        Real *h_velrhop_;              // particle velocities and densities
+        uint *h_particle_type_; // number identifying particle type (e.g. fluid, stationary boundary, moving boundary, etc.)
 
-        uint  *m_hParticleHash;
-        uint  *m_hParticleIndex;
-        uint  *m_hParticleType;
-        uint  *m_hCellStart;
-        uint  *m_hCellEnd;
+        // CPU grid sort data - used for dumping grid info to file
+        uint  *h_particle_hash_; // bin number that particle is located in for grid search
+        uint  *h_particle_index_; // unique particle identifier. constant throughout simulation
+        uint  *h_cell_start_; // sorted index of first particle in a given grid cell
+        uint  *h_cell_end_; // sorted index of last particle in a given grid cell
 
-        // GPU data
-        Real *m_dPos;
-        Real *m_dVel;
-        Real *m_dPosPre;
-        Real *m_dVelPre;
-        Real *m_dRho;
-        uint *m_dParticleType;
+        // GPU particle data
+        Real *d_pospres_; // particle positions and pressures (x,y,z,P)
+        Real *d_velrhop_; // particle velocities and densities (u,v,w,rho)
+        Real *d_pospres_pre_; // stores position and pressure data after predictor step
+        Real *d_velrhop_pre_; // stores velocity and density data after predictor step
+        Real *d_ace_drho_dt_; // particle acceleration data (u_dot, v_dot, w_dot,rho_dot)
+        uint *d_particle_type_; // particle type (fluid,boundary, etc.)
+        Real *d_sorted_pospres_; // stores particle position and pressure data, sorted according to grid index
+		Real *d_sorted_velrhop_; // stores particle velocity and density data, sorted according to grid index
+		Real *d_sorted_type_; // stores particle type data, sorted according to grid index
 
-        Real *m_dSortedPos;
-        Real *m_dSortedVel;
-        Real *m_dSortedRho;
+        // Adaptive time step data
+        Real *d_visc_dt_; // holds maximum dt value of each particle based on viscous considerations. (See Lui and Lui, 2003)
+        Real *d_max_accel_; // holds maximum acceleration of all particles
+        Real *d_max_sound_speed_; // holds maximum sound speed of all particles
+
+        // Sheppard filter data
+        Real *d_density_sum_; // density summation for each particle (rho(i) = Sum[ rho(j) * W_ij * Vol(j) ] for j = 1,2,...,N.
+        Real *d_kernel_sum_; // kernel summation for each particle (Sum[ W_ij * Vol(j)] for j = 1,2,...,N.
 
         // grid data for sorting method
-        uint  *m_dGridParticleHash; // grid hash value for each particle
-        uint  *m_dGridParticleIndex;// particle index for each particle
-        uint  *m_dCellStart;        // index of start of each cell in sorted list
-        uint  *m_dCellEnd;          // index of end of cell
+        uint  *d_particle_hash_; // grid hash value for each particle
+        uint  *d_particle_index_;// particle index for each particle
+        uint  *d_cell_start_;        // index of start of each cell in sorted list
+        uint  *d_cell_end_;          // index of end of cell
 
-        uint   m_gridSortBits;
+        uint   m_gridSortBits; // A left over from the cuda particles code - don't know what this is for.
 
         // params
-        SimParams m_params;
-        uint3 m_gridSize;
-        uint m_numGridCells;
+        SimParams h_params_;
+        uint3 h_grid_size_;
+        uint h_numGridCells_;
 
         StopWatchInterface *m_timer;
 

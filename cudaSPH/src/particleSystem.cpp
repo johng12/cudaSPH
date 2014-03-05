@@ -31,50 +31,52 @@
 
 ParticleSystem::ParticleSystem(uint numParticles) :
     m_bInitialized(false),
-    m_numParticles(numParticles),
-    m_hPos(0),
-    m_hVel(0),
-    m_dPos(0),
-    m_dVel(0),
-    m_dPosPre(0),
-	m_dVelPre(0),
+    numParticles_(numParticles),
+    h_pospres_(0),
+    h_velrhop_(0),
+    d_pospres_(0),
+    d_velrhop_(0),
+    d_pospres_pre_(0),
+	d_velrhop_pre_(0),
+	d_ace_drho_dt_(0),
+	d_visc_dt_(0),
     m_timer(NULL),
     m_solverIterations(1)
 {
 	// set simulation parameters
-	m_params.worldOrigin = make_Real3(-1.0, -1.0, -1.0);
-    m_params.worldSize = make_Real3(2.0, 2.0, 2.0);
-    m_params.smoothingLength = 1.0 / 64.0;
+	h_params_.worldOrigin = make_Real3(-1.0, -1.0, -1.0);
+    h_params_.worldSize = make_Real3(2.0, 2.0, 2.0);
+    h_params_.smoothingLength = 1.0 / 64.0;
 
-    Real3 domainMin = m_params.worldOrigin - 2.0 * m_params.smoothingLength;
-    m_params.worldOrigin = domainMin;
-	Real3 domainMax = domainMin + m_params.worldSize + 2.0 * m_params.smoothingLength;
-    Real cellSize = 2.0 * m_params.smoothingLength;  // cell size equal to 2*particle smoothing length
-	m_params.cellSize = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
+    Real3 domainMin = h_params_.worldOrigin - 2.0 * h_params_.smoothingLength;
+    h_params_.worldOrigin = domainMin;
+	Real3 domainMax = domainMin + h_params_.worldSize + 2.0 * h_params_.smoothingLength;
+    Real cellSize = 2.0 * h_params_.smoothingLength;  // cell size equal to 2*particle smoothing length
+	h_params_.cellSize = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
 
-	m_gridSize.x = floor((domainMax.x - domainMin.x)/m_params.cellSize.x);
-	m_gridSize.y = floor((domainMax.y - domainMin.y)/m_params.cellSize.y);
-	m_gridSize.z = floor((domainMax.z - domainMin.z)/m_params.cellSize.z);
+	h_grid_size_.x = floor((domainMax.x - domainMin.x)/h_params_.cellSize.x);
+	h_grid_size_.y = floor((domainMax.y - domainMin.y)/h_params_.cellSize.y);
+	h_grid_size_.z = floor((domainMax.z - domainMin.z)/h_params_.cellSize.z);
 
 //	m_gridSize.x = m_gridSize.y = m_gridSize.z = 64;
-    m_numGridCells = m_gridSize.x*m_gridSize.y*m_gridSize.z;
+    h_numGridCells_ = h_grid_size_.x*h_grid_size_.y*h_grid_size_.z;
 
-    m_params.gridSize = m_gridSize;
-    m_params.numCells = m_numGridCells;
-    m_params.numBodies = m_numParticles;
+    h_params_.gridSize = h_grid_size_;
+    h_params_.numCells = h_numGridCells_;
+    h_params_.numBodies = numParticles_;
 
-    m_params.particleRadius = 1.0 / 64.0;
-    m_params.colliderPos = make_Real3(-1.2, -0.8, 0.8);
-    m_params.colliderRadius = 0.2;
+    h_params_.particleRadius = 1.0 / 64.0;
+    h_params_.colliderPos = make_Real3(-1.2, -0.8, 0.8);
+    h_params_.colliderRadius = 0.2;
 
-    m_params.spring = 0.5;
-    m_params.damping = 0.02;
-    m_params.shear = 0.1;
-    m_params.attraction = 0.0;
-    m_params.boundaryDamping = -0.5;
+    h_params_.spring = 0.5;
+    h_params_.damping = 0.02;
+    h_params_.shear = 0.1;
+    h_params_.attraction = 0.0;
+    h_params_.boundaryDamping = -0.5;
 
-    m_params.gravity = make_Real3(0.0, -0.0003, 0.0);
-    m_params.globalDamping = 1.0;
+    h_params_.gravity = make_Real3(0.0, -0.0003, 0.0);
+    h_params_.globalDamping = 1.0;
 
     _initialize(numParticles);
 
@@ -83,7 +85,7 @@ ParticleSystem::ParticleSystem(uint numParticles) :
 ParticleSystem::~ParticleSystem()
 {
     _finalize();
-    m_numParticles = 0;
+    numParticles_ = 0;
 }
 
 void
@@ -91,54 +93,57 @@ ParticleSystem::_initialize(int numParticles)
 {
     assert(!m_bInitialized);
 
-    m_numParticles = numParticles;
+    numParticles_ = numParticles;
 
     // allocate host storage
-    m_hPos = new Real[m_numParticles*4];
-    m_hVel = new Real[m_numParticles*4];
-    m_hRho = new Real[m_numParticles*4];
-    memset(m_hPos, 0, m_numParticles*4*sizeof(Real));
-    memset(m_hVel, 0, m_numParticles*4*sizeof(Real));
-    memset(m_hRho, 0, m_numParticles*4*sizeof(Real));
+    h_pospres_ = new Real[numParticles_*4];
+    h_velrhop_ = new Real[numParticles_*4];
+    memset(h_pospres_, 0, numParticles_*4*sizeof(Real));
+    memset(h_velrhop_, 0, numParticles_*4*sizeof(Real));
 
-    m_hCellStart = new uint[m_numGridCells];
-    memset(m_hCellStart, 0, m_numGridCells*sizeof(uint));
+    h_cell_start_ = new uint[h_numGridCells_];
+    memset(h_cell_start_, 0, h_numGridCells_*sizeof(uint));
 
-    m_hParticleHash = new uint[m_numParticles];
-	memset(m_hParticleHash, 0, m_numParticles*sizeof(uint));
+    h_particle_hash_ = new uint[numParticles_];
+	memset(h_particle_hash_, 0, numParticles_*sizeof(uint));
 
-	m_hParticleIndex = new uint[m_numParticles];
-		memset(m_hParticleIndex, 0, m_numParticles*sizeof(uint));
+	h_particle_index_ = new uint[numParticles_];
+		memset(h_particle_index_, 0, numParticles_*sizeof(uint));
 
-	m_hParticleType = new uint[m_numParticles];
-			memset(m_hParticleType, 0, m_numParticles*sizeof(uint));
+	h_particle_type_ = new uint[numParticles_];
+			memset(h_particle_type_, 0, numParticles_*sizeof(uint));
 
-    m_hCellEnd = new uint[m_numGridCells];
-    memset(m_hCellEnd, 0, m_numGridCells*sizeof(uint));
+    h_cell_end_ = new uint[h_numGridCells_];
+    memset(h_cell_end_, 0, h_numGridCells_*sizeof(uint));
 
     // allocate GPU data
-    unsigned int memSize = sizeof(Real) * 4 * m_numParticles;
+    unsigned int memSize = sizeof(Real) * 4 * numParticles_;
 
-	allocateArray((void **)&m_dPos, memSize);
-    allocateArray((void **)&m_dVel, memSize);
-    allocateArray((void **)&m_dPosPre, memSize);
-	allocateArray((void **)&m_dVelPre, memSize);
-    allocateArray((void **)&m_dRho, memSize);
+	allocateArray((void **)&d_pospres_, memSize);
+    allocateArray((void **)&d_velrhop_, memSize);
+    allocateArray((void **)&d_pospres_pre_, memSize);
+	allocateArray((void **)&d_velrhop_pre_, memSize);
+	allocateArray((void **)&d_ace_drho_dt_, memSize);
+	allocateArray((void **)&d_particle_type_, sizeof(uint) * numParticles_);
+    allocateArray((void **)&d_sorted_pospres_, memSize);
+    allocateArray((void **)&d_sorted_velrhop_, memSize);
+    allocateArray((void **)&d_sorted_type_, sizeof(uint) * numParticles_);
 
-    allocateArray((void **)&m_dSortedPos, memSize);
-    allocateArray((void **)&m_dSortedVel, memSize);
-    allocateArray((void **)&m_dSortedRho, memSize);
+    allocateArray((void **)&d_visc_dt_,sizeof(Real) * numParticles_);
+    allocateArray((void **)&d_max_accel_,sizeof(Real));
+    allocateArray((void **)&d_max_sound_speed_,sizeof(Real));
 
-    allocateArray((void **)&m_dGridParticleHash, m_numParticles*sizeof(uint));
-    allocateArray((void **)&m_dGridParticleIndex, m_numParticles*sizeof(uint));
-    allocateArray((void **)&m_dParticleType, m_numParticles*sizeof(uint));
+    allocateArray((void **)&d_density_sum_,sizeof(Real) * numParticles_);
+    allocateArray((void **)&d_kernel_sum_, sizeof(Real) * numParticles_);
 
-    allocateArray((void **)&m_dCellStart, m_numGridCells*sizeof(uint));
-    allocateArray((void **)&m_dCellEnd, m_numGridCells*sizeof(uint));
+    allocateArray((void **)&d_particle_hash_, numParticles_*sizeof(uint));
+    allocateArray((void **)&d_particle_index_, numParticles_*sizeof(uint));
+    allocateArray((void **)&d_cell_start_, h_numGridCells_*sizeof(uint));
+    allocateArray((void **)&d_cell_end_, h_numGridCells_*sizeof(uint));
 
     sdkCreateTimer(&m_timer);
 
-    setParameters(&m_params);
+    setParameters(&h_params_);
 
     m_bInitialized = true;
 }
@@ -148,129 +153,166 @@ ParticleSystem::_finalize()
 {
     assert(m_bInitialized);
 
-    delete [] m_hPos;
-    delete [] m_hVel;
-    delete [] m_hCellStart;
-    delete [] m_hCellEnd;
+    delete [] h_pospres_;
+    delete [] h_velrhop_;
+    delete [] h_cell_start_;
+    delete [] h_cell_end_;
 
-    freeArray(m_dPos);
-    freeArray(m_dVel);
-    freeArray(m_dPosPre);
-    freeArray(m_dVelPre);
-    freeArray(m_dRho);
+    freeArray(d_pospres_);
+    freeArray(d_velrhop_);
+    freeArray(d_pospres_pre_);
+    freeArray(d_velrhop_pre_);
+    freeArray(d_ace_drho_dt_);
+    freeArray(d_particle_type_);
+    freeArray(d_sorted_pospres_);
+    freeArray(d_sorted_velrhop_);
+    freeArray(d_sorted_type_);
 
-    freeArray(m_dSortedPos);
-    freeArray(m_dSortedVel);
-    freeArray(m_dSortedRho);
+    freeArray(d_visc_dt_);
+    freeArray(d_max_accel_);
+    freeArray(d_max_sound_speed_);
 
-    freeArray(m_dGridParticleHash);
-    freeArray(m_dGridParticleIndex);
-    freeArray(m_dCellStart);
-    freeArray(m_dCellEnd);
+    freeArray(d_density_sum_);
+    freeArray(d_kernel_sum_);
+
+    freeArray(d_particle_hash_);
+    freeArray(d_particle_index_);
+    freeArray(d_cell_start_);
+    freeArray(d_cell_end_);
 }
 
-// step the simulation
-void
+// step the simulation and return the current time step
+Real
 ParticleSystem::update(Real deltaTime)
 {
     assert(m_bInitialized);
 
     // update constants
-    setParameters(&m_params);
+    setParameters(&h_params_);
 
-    // predictor step
-    predictorStep(
-        m_dPos,
-        m_dVel,
-        m_dPosPre,
-        m_dVelPre,
-        deltaTime,
-        m_numParticles);
+    {//======== Predictor Step =============
+		// calculate grid hash
+		calcHash(
+			d_particle_hash_,
+			d_particle_index_,
+			d_pospres_pre_,
+			numParticles_);
 
-    // calculate grid hash
-    calcHash(
-        m_dGridParticleHash,
-        m_dGridParticleIndex,
-        m_dPosPre,
-        m_numParticles);
+		// sort particles based on hash
+		sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
 
-    // sort particles based on hash
-    sortParticles(m_dGridParticleHash, m_dGridParticleIndex, m_numParticles);
+		// reorder particle arrays into sorted order and
+		// find start and end of each cell
+		reorderDataAndFindCellStart(
+			d_cell_start_,
+			d_cell_end_,
+			d_sorted_pospres_,
+			d_sorted_velrhop_,
+			d_particle_hash_,
+			d_particle_index_,
+			d_pospres_pre_,
+			d_velrhop_pre_,
+			numParticles_,
+			h_numGridCells_);
 
-    // reorder particle arrays into sorted order and
-    // find start and end of each cell
-    reorderDataAndFindCellStart(
-        m_dCellStart,
-        m_dCellEnd,
-        m_dSortedPos,
-        m_dSortedVel,
-        m_dGridParticleHash,
-        m_dGridParticleIndex,
-        m_dPosPre,
-        m_dVelPre,
-        m_numParticles,
-        m_numGridCells);
+		// prepare variables for interaction
+		// zero accel arrays, get pressures, etc.
+		pre_interaction(d_ace_drho_dt_,
+						d_velrhop_,
+						d_pospres_,
+						d_visc_dt_,
+						numParticles_);
 
-    // update constants
-        setParameters(&m_params);
+		// process particle interactions
+		collide(
+			d_velrhop_,
+			d_sorted_pospres_,
+			d_sorted_velrhop_,
+			d_particle_index_,
+			d_cell_start_,
+			d_cell_end_,
+			numParticles_,
+			h_numGridCells_);
 
-    // process collisions
-    collide(
-        m_dVel,
-        m_dSortedPos,
-        m_dSortedVel,
-        m_dGridParticleIndex,
-        m_dCellStart,
-        m_dCellEnd,
-        m_numParticles,
-        m_numGridCells);
+		// get time step
+		deltaTime = get_time_step(d_visc_dt_,numParticles_);
 
-    // corrector step
+		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
+		zero_acceleration(d_ace_drho_dt_);
+
+		// zero out y-component of data for 2D simulations
+		if(simulate_2D) zero_ycomponent(d_ace_drho_dt_,numParticles_);
+
+		// predictor step
+		predictorStep(
+			d_pospres_,
+			d_velrhop_,
+			d_pospres_pre_,
+			d_velrhop_pre_,
+			deltaTime,
+			numParticles_);
+    }
+
+    {//============ Corrector Step =============
+		// calculate grid hash
+		calcHash(
+			d_particle_hash_,
+			d_particle_index_,
+			d_pospres_pre_,
+			numParticles_);
+
+		// sort particles based on hash
+		sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
+
+		// reorder particle arrays into sorted order and
+		// find start and end of each cell
+		reorderDataAndFindCellStart(
+			d_cell_start_,
+			d_cell_end_,
+			d_sorted_pospres_,
+			d_sorted_velrhop_,
+			d_particle_hash_,
+			d_particle_index_,
+			d_pospres_pre_,
+			d_velrhop_pre_,
+			numParticles_,
+			h_numGridCells_);
+
+		// prepare data for interactions
+		pre_interaction(d_ace_drho_dt_,
+								d_velrhop_,
+								d_pospres_,
+								d_visc_dt_,
+								numParticles_);
+
+		// process particle interactions
+		collide(
+			d_velrhop_,
+			d_sorted_pospres_,
+			d_sorted_velrhop_,
+			d_particle_index_,
+			d_cell_start_,
+			d_cell_end_,
+			numParticles_,
+			h_numGridCells_);
+
+		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
+		zero_acceleration(d_ace_drho_dt_);
+
+		// zero out y-component of data for 2D simulations. still need to add C wrapper to this as well
+		if(simulate_2D) zero_ycomponent(d_ace_drho_dt_,numParticles_);
+
+		// corrector step
         correctorStep(
-            m_dPos,
-            m_dVel,
-            m_dPosPre,
-            m_dVelPre,
+            d_pospres_,
+            d_velrhop_,
+            d_pospres_pre_,
+            d_velrhop_pre_,
             deltaTime,
-            m_numParticles);
+            numParticles_);
+    }
 
-        // calculate grid hash
-        calcHash(
-            m_dGridParticleHash,
-            m_dGridParticleIndex,
-            m_dPos,
-            m_numParticles);
-
-        // sort particles based on hash
-        sortParticles(m_dGridParticleHash, m_dGridParticleIndex, m_numParticles);
-
-        // reorder particle arrays into sorted order and
-        // find start and end of each cell
-        reorderDataAndFindCellStart(
-            m_dCellStart,
-            m_dCellEnd,
-            m_dSortedPos,
-            m_dSortedVel,
-            m_dGridParticleHash,
-            m_dGridParticleIndex,
-            m_dPos,
-            m_dVel,
-            m_numParticles,
-            m_numGridCells);
-
-        // update constants
-            setParameters(&m_params);
-
-        // process collisions
-        collide(
-            m_dVel,
-            m_dSortedPos,
-            m_dSortedVel,
-            m_dGridParticleIndex,
-            m_dCellStart,
-            m_dCellEnd,
-            m_numParticles,
-            m_numGridCells);
+    return deltaTime;
 
 }
 
@@ -278,15 +320,15 @@ void
 ParticleSystem::dumpGrid()
 {
     // dump grid information
-    copyArrayFromDevice(m_hCellStart, m_dCellStart, 0, sizeof(uint)*m_numGridCells);
-    copyArrayFromDevice(m_hCellEnd, m_dCellEnd, 0, sizeof(uint)*m_numGridCells);
+    copyArrayFromDevice(h_cell_start_, d_cell_start_, 0, sizeof(uint)*h_numGridCells_);
+    copyArrayFromDevice(h_cell_end_, d_cell_end_, 0, sizeof(uint)*h_numGridCells_);
     uint maxCellSize = 0;
 
-    for (uint i=0; i<m_numGridCells; i++)
+    for (uint i=0; i<h_numGridCells_; i++)
     {
-        if (m_hCellStart[i] != 0xffffffff)
+        if (h_cell_start_[i] != 0xffffffff)
         {
-            uint cellSize = m_hCellEnd[i] - m_hCellStart[i];
+            uint cellSize = h_cell_end_[i] - h_cell_start_[i];
 
             //            printf("cell: %d, %d particles\n", i, cellSize);
             if (cellSize > maxCellSize)
@@ -302,11 +344,11 @@ ParticleSystem::dumpGrid()
 void
 ParticleSystem::dumpParameters()
 {
-    printf("world origin = %3.2f x %3.2f x %3.2f \n",m_params.worldOrigin.x,m_params.worldOrigin.y,m_params.worldOrigin.z);
-    printf("world size = %3.2f x %3.2f x %3.2f \n",m_params.worldSize.x,m_params.worldSize.y,m_params.worldSize.z);
-    printf("Cell Size = %5.4f x %5.4f x %5.4f \n",m_params.cellSize.x, m_params.cellSize.y,m_params.cellSize.z);
-    printf("Grid Size = %d x %d x %d \n",m_gridSize.x, m_gridSize.y,m_gridSize.z);
-    printf("Total Cells = %d \n",m_params.numCells);
+    printf("world origin = %3.2f x %3.2f x %3.2f \n",h_params_.worldOrigin.x,h_params_.worldOrigin.y,h_params_.worldOrigin.z);
+    printf("world size = %3.2f x %3.2f x %3.2f \n",h_params_.worldSize.x,h_params_.worldSize.y,h_params_.worldSize.z);
+    printf("Cell Size = %5.4f x %5.4f x %5.4f \n",h_params_.cellSize.x, h_params_.cellSize.y,h_params_.cellSize.z);
+    printf("Grid Size = %d x %d x %d \n",h_grid_size_.x, h_grid_size_.y,h_grid_size_.z);
+    printf("Total Cells = %d \n",h_params_.numCells);
 }
 
 void
@@ -316,14 +358,14 @@ ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
 	  pFile = fopen (fileName,"w");
 
     // debug
-    copyArrayFromDevice(m_hPos, m_dPos, 0, sizeof(Real)*4*count);
-    copyArrayFromDevice(m_hVel, m_dVel, 0, sizeof(Real)*4*count);
+    copyArrayFromDevice(h_pospres_, d_pospres_, 0, sizeof(Real)*4*count);
+    copyArrayFromDevice(h_velrhop_, d_velrhop_, 0, sizeof(Real)*4*count);
 
     for (uint i=start; i<start+count; i++)  {
         //        printf("%d: ", i);
-    	fprintf(pFile,"%10.9f, %10.9f, %10.9f\n", m_hPos[i*4+0], m_hPos[i*4+1], m_hPos[i*4+2]);
-//        printf("pos: (%.4f, %.4f, %.4f, %.4f)\n", m_hPos[i*4+0], m_hPos[i*4+1], m_hPos[i*4+2], m_hPos[i*4+3]);
-//        printf("vel: (%.4f, %.4f, %.4f, %.4f)\n", m_hVel[i*4+0], m_hVel[i*4+1], m_hVel[i*4+2], m_hVel[i*4+3]);
+    	fprintf(pFile,"%10.9f, %10.9f, %10.9f\n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2]);
+//        printf("pos: (%.4f, %.4f, %.4f, %.4f)\n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
+//        printf("vel: (%.4f, %.4f, %.4f, %.4f)\n", h_velrhop_[i*4+0], h_velrhop_[i*4+1], h_velrhop_[i*4+2], h_velrhop_[i*4+3]);
     }
     fclose(pFile);
 }
@@ -341,15 +383,15 @@ ParticleSystem::getArray(ParticleArray array)
     {
         default:
         case POSITION:
-            hdata = m_hPos;
-            ddata = m_dPos;
-            copyArrayFromDevice(hdata, ddata, 0,m_numParticles*4*sizeof(Real));
+            hdata = h_pospres_;
+            ddata = d_pospres_;
+            copyArrayFromDevice(hdata, ddata, 0,numParticles_*4*sizeof(Real));
             break;
 
         case VELOCITY:
-            hdata = m_hVel;
-            ddata = m_dVel;
-            copyArrayFromDevice(hdata, ddata, 0,m_numParticles*4*sizeof(Real));
+            hdata = h_velrhop_;
+            ddata = d_velrhop_;
+            copyArrayFromDevice(hdata, ddata, 0,numParticles_*4*sizeof(Real));
             break;
 
     }
@@ -366,9 +408,9 @@ ParticleSystem::getHash()
 	uint *hdata = 0;
 	uint *ddata = 0;
 
-    hdata = m_hParticleHash;
-    ddata = m_dGridParticleHash;
-    copyArrayFromDevice(hdata,ddata,0,m_numParticles*sizeof(uint));
+    hdata = h_particle_hash_;
+    ddata = d_particle_hash_;
+    copyArrayFromDevice(hdata,ddata,0,numParticles_*sizeof(uint));
 
     return hdata;
 
@@ -382,9 +424,9 @@ ParticleSystem::getIndex()
 	uint *hdata = 0;
 	uint *ddata = 0;
 
-    hdata = m_hParticleIndex;
-    ddata = m_dGridParticleIndex;
-    copyArrayFromDevice(hdata,ddata,0,m_numParticles*sizeof(uint));
+    hdata = h_particle_index_;
+    ddata = d_particle_index_;
+    copyArrayFromDevice(hdata,ddata,0,numParticles_*sizeof(uint));
 
     return hdata;
 
@@ -399,13 +441,13 @@ ParticleSystem::setArray(ParticleArray array, const Real *data, int start, int c
     {
         default:
         case POSITION:
-			copyArrayToDevice(m_dPos, data, start*4*sizeof(Real), count*4*sizeof(Real));
+			copyArrayToDevice(d_pospres_, data, start*4*sizeof(Real), count*4*sizeof(Real));
 			break;
 
 
 
         case VELOCITY:
-            copyArrayToDevice(m_dVel, data, start*4*sizeof(Real), count*4*sizeof(Real));
+            copyArrayToDevice(d_velrhop_, data, start*4*sizeof(Real), count*4*sizeof(Real));
             break;
     }
 }
@@ -430,19 +472,19 @@ ParticleSystem::initGrid(uint *size, Real spacing, Real jitter, uint numParticle
 
                 if (i < numParticles)
                 {
-                    m_hPos[i*4] = (spacing * x) + m_params.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
-                    m_hPos[i*4+1] = (spacing * y) + m_params.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
-                    m_hPos[i*4+2] = (spacing * z) + m_params.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
+                    h_pospres_[i*4] = (spacing * x) + h_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
+                    h_pospres_[i*4+1] = (spacing * y) + h_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
+                    h_pospres_[i*4+2] = (spacing * z) + h_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
 
-//                    m_hPos[i*4] = (spacing * x) + m_params.particleRadius - 1.0;
-//				    m_hPos[i*4+1] = (spacing * y) + m_params.particleRadius - 1.0;
-//				    m_hPos[i*4+2] = (spacing * z) + m_params.particleRadius - 1.0;
-                    m_hPos[i*4+3] = 1.0;
+//                    h_pospres_[i*4] = (spacing * x) + m_params.particleRadius - 1.0;
+//				    h_pospres_[i*4+1] = (spacing * y) + m_params.particleRadius - 1.0;
+//				    h_pospres_[i*4+2] = (spacing * z) + m_params.particleRadius - 1.0;
+                    h_pospres_[i*4+3] = 1.0;
 
-                    m_hVel[i*4] = 0.0;
-                    m_hVel[i*4+1] = 0.0;
-                    m_hVel[i*4+2] = 0.0;
-                    m_hVel[i*4+3] = 0.0;
+                    h_velrhop_[i*4] = 0.0;
+                    h_velrhop_[i*4+1] = 0.0;
+                    h_velrhop_[i*4+2] = 0.0;
+                    h_velrhop_[i*4+3] = 0.0;
                 }
             }
         }
@@ -459,35 +501,35 @@ ParticleSystem::reset(ParticleConfig config)
             {
                 int p = 0, v = 0;
 
-                for (uint i=0; i < m_numParticles; i++)
+                for (uint i=0; i < numParticles_; i++)
                 {
                     Real point[3];
                     point[0] = frand();
                     point[1] = frand();
                     point[2] = frand();
-                    m_hPos[p++] = 2 * (point[0] - 0.5);
-                    m_hPos[p++] = 2 * (point[1] - 0.5);
-                    m_hPos[p++] = 2 * (point[2] - 0.5);
-                    m_hPos[p++] = 1.0; // radius
-                    m_hVel[v++] = 0.0;
-                    m_hVel[v++] = 0.0;
-                    m_hVel[v++] = 0.0;
-                    m_hVel[v++] = 0.0;
+                    h_pospres_[p++] = 2 * (point[0] - 0.5);
+                    h_pospres_[p++] = 2 * (point[1] - 0.5);
+                    h_pospres_[p++] = 2 * (point[2] - 0.5);
+                    h_pospres_[p++] = 1.0; // radius
+                    h_velrhop_[v++] = 0.0;
+                    h_velrhop_[v++] = 0.0;
+                    h_velrhop_[v++] = 0.0;
+                    h_velrhop_[v++] = 0.0;
                 }
             }
             break;
 
         case CONFIG_GRID:
             {
-                Real jitter = m_params.particleRadius*0.01;
-                uint s = (int) ceil(pow((Real) m_numParticles, 1.0 / 3.0));
+                Real jitter = h_params_.particleRadius*0.01;
+                uint s = (int) ceil(pow((Real) numParticles_, 1.0 / 3.0));
                 uint gridSize[3];
                 gridSize[0] = gridSize[1] = gridSize[2] = s;
-                initGrid(gridSize, m_params.particleRadius*2.0, jitter, m_numParticles);
+                initGrid(gridSize, h_params_.particleRadius*2.0, jitter, numParticles_);
             }
             break;
     }
 
-    setArray(POSITION, m_hPos, 0, m_numParticles);
-    setArray(VELOCITY, m_hVel, 0, m_numParticles);
+    setArray(POSITION, h_pospres_, 0, numParticles_);
+    setArray(VELOCITY, h_velrhop_, 0, numParticles_);
 }
