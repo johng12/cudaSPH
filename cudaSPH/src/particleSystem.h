@@ -65,58 +65,58 @@ class ParticleSystem
 
         void setDamping(Real x)
         {
-            h_params_.globalDamping = x;
+            h_domain_params_.globalDamping = x;
         }
         void setGravity(Real x)
         {
-            h_params_.gravity = make_Real3(0.0, x, 0.0);
+            h_domain_params_.gravity = make_Real3(0.0, x, 0.0);
         }
 
         void setCollideSpring(Real x)
         {
-            h_params_.spring = x;
+            h_domain_params_.spring = x;
         }
         void setCollideDamping(Real x)
         {
-            h_params_.damping = x;
+            h_domain_params_.damping = x;
         }
         void setCollideShear(Real x)
         {
-            h_params_.shear = x;
+            h_domain_params_.shear = x;
         }
         void setCollideAttraction(Real x)
         {
-            h_params_.attraction = x;
+            h_domain_params_.attraction = x;
         }
 
         void setColliderPos(Real3 x)
         {
-            h_params_.colliderPos = x;
+            h_domain_params_.colliderPos = x;
         }
 
         Real getParticleRadius()
         {
-            return h_params_.particleRadius;
+            return h_domain_params_.particleRadius;
         }
         Real3 getColliderPos()
         {
-            return h_params_.colliderPos;
+            return h_domain_params_.colliderPos;
         }
         Real getColliderRadius()
         {
-            return h_params_.colliderRadius;
+            return h_domain_params_.colliderRadius;
         }
         uint3 getGridSize()
         {
-            return h_params_.gridSize;
+            return h_domain_params_.grid_size;
         }
         Real3 getWorldOrigin()
         {
-            return h_params_.worldOrigin;
+            return h_domain_params_.world_origin;
         }
         Real3 getCellSize()
         {
-            return h_params_.cellSize;
+            return h_domain_params_.cell_size;
         }
 
     protected: // methods
@@ -170,8 +170,11 @@ class ParticleSystem
 
         uint   m_gridSortBits; // A left over from the cuda particles code - don't know what this is for.
 
-        // params
-        SimParams h_params_;
+        // parameters
+        simulation_parameters h_simulation_params_;
+        domain_parameters h_domain_params_;
+        execution_parameters h_exec_params_;
+
         uint3 h_grid_size_;
         uint h_numGridCells_;
 

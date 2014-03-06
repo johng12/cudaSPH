@@ -44,39 +44,52 @@ ParticleSystem::ParticleSystem(uint numParticles) :
     m_solverIterations(1)
 {
 	// set simulation parameters
-	h_params_.worldOrigin = make_Real3(-1.0, -1.0, -1.0);
-    h_params_.worldSize = make_Real3(2.0, 2.0, 2.0);
-    h_params_.smoothingLength = 1.0 / 64.0;
+	h_simulation_params_.num_particles = numParticles;
+	h_simulation_params_.num_fluid_particles = numParticles;
+	h_simulation_params_.num_boundary_particles = numParticles;
+	h_simulation_params_.gravity = make_Real3(0.0, 0.0, -9.81);
+	h_simulation_params_.smoothing_length = 1.0 / 64.0;
+	h_simulation_params_.over_smoothing_length = 1.0 / h_simulation_params.smoothing_length;
+	h_simulation_params_.four_h_squared = 4.0 * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length;
+	h_simulation_params_.rhop0 = 1000.0;
+	h_simulation_params_.over_rhop0 = 1.0 / 1000.0;
+	h_simulation_params_.fluid_mass = 1.0;
+	h_simulation_params_.boundary_mass = 1.0;
+	h_simulation_params_.cs0 = 1.0;
+	h_simulation_params_.wendland_a1 = 1.0;
+	h_simulation_params_.wendland_a2 = 1.0;
+	h_simulation_params_.epsilon = 1e-3;
+	h_simulation_params_.nu = 1e-3;
+	h_simulation_params_.gamma = 7.0;
+	h_simulation_params_.b_coeff = 1.0;
+	h_simulation_params_.cfl_number = 0.3;
 
-    Real3 domainMin = h_params_.worldOrigin - 2.0 * h_params_.smoothingLength;
-    h_params_.worldOrigin = domainMin;
-	Real3 domainMax = domainMin + h_params_.worldSize + 2.0 * h_params_.smoothingLength;
-    Real cellSize = 2.0 * h_params_.smoothingLength;  // cell size equal to 2*particle smoothing length
-	h_params_.cellSize = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
+	// set domain parameters
+	h_domain_params_.world_origin = make_Real3(-1.0, -1.0, -1.0);
+    h_domain_params_.world_size = make_Real3(2.0, 2.0, 2.0);
+    Real3 domainMin = h_domain_params_.world_origin - 2.0 * h_domain_params_.smoothingLength;
+    h_domain_params_.world_origin = domainMin;
+	Real3 domainMax = domainMin + h_domain_params_.world_size + 2.0 * h_domain_params_.smoothingLength;
+    Real cellSize = 2.0 * h_domain_params_.smoothingLength;  // cell size equal to 2*particle smoothing length
+	h_domain_params_.cell_size = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
 
-	h_grid_size_.x = floor((domainMax.x - domainMin.x)/h_params_.cellSize.x);
-	h_grid_size_.y = floor((domainMax.y - domainMin.y)/h_params_.cellSize.y);
-	h_grid_size_.z = floor((domainMax.z - domainMin.z)/h_params_.cellSize.z);
+	h_grid_size_.x = floor((domainMax.x - domainMin.x)/h_domain_params_.cell_size.x);
+	h_grid_size_.y = floor((domainMax.y - domainMin.y)/h_domain_params_.cell_size.y);
+	h_grid_size_.z = floor((domainMax.z - domainMin.z)/h_domain_params_.cell_size.z);
 
 //	m_gridSize.x = m_gridSize.y = m_gridSize.z = 64;
     h_numGridCells_ = h_grid_size_.x*h_grid_size_.y*h_grid_size_.z;
+    h_domain_params_.num_cells = h_numGridCells_;
 
-    h_params_.gridSize = h_grid_size_;
-    h_params_.numCells = h_numGridCells_;
-    h_params_.numBodies = numParticles_;
-
-    h_params_.particleRadius = 1.0 / 64.0;
-    h_params_.colliderPos = make_Real3(-1.2, -0.8, 0.8);
-    h_params_.colliderRadius = 0.2;
-
-    h_params_.spring = 0.5;
-    h_params_.damping = 0.02;
-    h_params_.shear = 0.1;
-    h_params_.attraction = 0.0;
-    h_params_.boundaryDamping = -0.5;
-
-    h_params_.gravity = make_Real3(0.0, -0.0003, 0.0);
-    h_params_.globalDamping = 1.0;
+    // set execution parameters
+    h_exec_params_.density_renormalization_frequency = 30;
+    h_exec_params_.fixed_dt = 0.0;
+    h_exec_params_.periodic_in = NONE;
+    h_exec_params_.print_interval = 1e-3;
+    h_exec_params_.save_interval = 1e-3;
+    h_exec_params_.simulation_dimension = THREE_D;
+    h_exec_params_.output_directory = "./Case_out/";
+    h_exec_params_.working_directory = "./";
 
     _initialize(numParticles);
 
@@ -143,7 +156,9 @@ ParticleSystem::_initialize(int numParticles)
 
     sdkCreateTimer(&m_timer);
 
-    setParameters(&h_params_);
+    setParameters(&h_domain_params_);
+    setParameters(&h_simulation_params_);
+    setParameters(&h_exec_params_);
 
     m_bInitialized = true;
 }
@@ -188,7 +203,7 @@ ParticleSystem::update(Real deltaTime)
     assert(m_bInitialized);
 
     // update constants
-    setParameters(&h_params_);
+    setParameters(&h_domain_params_);
 
     {//======== Predictor Step =============
 		// calculate grid hash
@@ -241,7 +256,7 @@ ParticleSystem::update(Real deltaTime)
 		zero_acceleration(d_ace_drho_dt_);
 
 		// zero out y-component of data for 2D simulations
-		if(simulate_2D) zero_ycomponent(d_ace_drho_dt_,numParticles_);
+		if(h_exec_params_.simulation_dimension == TWO_D) zero_ycomponent(d_ace_drho_dt_,numParticles_);
 
 		// predictor step
 		predictorStep(
@@ -300,7 +315,7 @@ ParticleSystem::update(Real deltaTime)
 		zero_acceleration(d_ace_drho_dt_);
 
 		// zero out y-component of data for 2D simulations. still need to add C wrapper to this as well
-		if(simulate_2D) zero_ycomponent(d_ace_drho_dt_,numParticles_);
+		if(h_exec_params_.simulation_dimension == TWO_D) zero_ycomponent(d_ace_drho_dt_,numParticles_);
 
 		// corrector step
         correctorStep(
@@ -330,7 +345,7 @@ ParticleSystem::dumpGrid()
         {
             uint cellSize = h_cell_end_[i] - h_cell_start_[i];
 
-            //            printf("cell: %d, %d particles\n", i, cellSize);
+            //            printf("cell: %d, %d particles\n", i, cell_size);
             if (cellSize > maxCellSize)
             {
                 maxCellSize = cellSize;
@@ -344,11 +359,11 @@ ParticleSystem::dumpGrid()
 void
 ParticleSystem::dumpParameters()
 {
-    printf("world origin = %3.2f x %3.2f x %3.2f \n",h_params_.worldOrigin.x,h_params_.worldOrigin.y,h_params_.worldOrigin.z);
-    printf("world size = %3.2f x %3.2f x %3.2f \n",h_params_.worldSize.x,h_params_.worldSize.y,h_params_.worldSize.z);
-    printf("Cell Size = %5.4f x %5.4f x %5.4f \n",h_params_.cellSize.x, h_params_.cellSize.y,h_params_.cellSize.z);
+    printf("world origin = %3.2f x %3.2f x %3.2f \n",h_domain_params_.world_origin.x,h_domain_params_.worldOrigin.y,h_domain_params_.world_origin.z);
+    printf("world size = %3.2f x %3.2f x %3.2f \n",h_domain_params_.world_size.x,h_domain_params_.world_size.y,h_domain_params_.world_size.z);
+    printf("Cell Size = %5.4f x %5.4f x %5.4f \n",h_domain_params_.cell_size.x, h_domain_params_.cell_size.y,h_domain_params_.cell_size.z);
     printf("Grid Size = %d x %d x %d \n",h_grid_size_.x, h_grid_size_.y,h_grid_size_.z);
-    printf("Total Cells = %d \n",h_params_.numCells);
+    printf("Total Cells = %d \n",h_domain_params_.num_cells);
 }
 
 void
@@ -472,9 +487,9 @@ ParticleSystem::initGrid(uint *size, Real spacing, Real jitter, uint numParticle
 
                 if (i < numParticles)
                 {
-                    h_pospres_[i*4] = (spacing * x) + h_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
-                    h_pospres_[i*4+1] = (spacing * y) + h_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
-                    h_pospres_[i*4+2] = (spacing * z) + h_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
+                    h_pospres_[i*4] = (spacing * x) + h_domain_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
+                    h_pospres_[i*4+1] = (spacing * y) + h_domain_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
+                    h_pospres_[i*4+2] = (spacing * z) + h_domain_params_.particleRadius - 1.0 + (frand()*2.0-1.0)*jitter;
 
 //                    h_pospres_[i*4] = (spacing * x) + m_params.particleRadius - 1.0;
 //				    h_pospres_[i*4+1] = (spacing * y) + m_params.particleRadius - 1.0;
@@ -521,11 +536,11 @@ ParticleSystem::reset(ParticleConfig config)
 
         case CONFIG_GRID:
             {
-                Real jitter = h_params_.particleRadius*0.01;
+                Real jitter = h_domain_params_.particleRadius*0.01;
                 uint s = (int) ceil(pow((Real) numParticles_, 1.0 / 3.0));
                 uint gridSize[3];
                 gridSize[0] = gridSize[1] = gridSize[2] = s;
-                initGrid(gridSize, h_params_.particleRadius*2.0, jitter, numParticles_);
+                initGrid(gridSize, h_domain_params_.particleRadius*2.0, jitter, numParticles_);
             }
             break;
     }

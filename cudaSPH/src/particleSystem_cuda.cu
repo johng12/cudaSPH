@@ -73,10 +73,10 @@ extern "C"
 
     }
 
-    void setParameters(SimParams *hostParams)
+    void setParameters(domain_parameters *hostParams)
     {
         // copy parameters to constant memory
-        checkCudaErrors(cudaMemcpyToSymbol(params, hostParams, sizeof(SimParams)));
+        checkCudaErrors(cudaMemcpyToSymbol(params, hostParams, sizeof(domain_parameters)));
     }
 
     //Round a / b to nearest higher integer value

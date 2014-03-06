@@ -34,7 +34,9 @@ texture<uint, 1, cudaReadModeElementType> cellEndTex;
 #endif
 
 // simulation parameters in constant memory
-__constant__ SimParams params;
+__constant__ domain_parameters domain_params;
+__constant__ simulation_parameters sim_params;
+__constant__ execution_parameters exec_params;
 
 __device__ int cellExists(int3 cellPos);
 
@@ -133,9 +135,9 @@ struct integrate_corrector
 __device__ int3 calcGridPos(Real3 p)
 {
     int3 gridPos;
-    gridPos.x = floor((p.x - params.worldOrigin.x) / params.cellSize.x);
-    gridPos.y = floor((p.y - params.worldOrigin.y) / params.cellSize.y);
-    gridPos.z = floor((p.z - params.worldOrigin.z) / params.cellSize.z);
+    gridPos.x = floor((p.x - domain_params.world_origin.x) / domain_params.cell_size.x);
+    gridPos.y = floor((p.y - domain_params.world_origin.y) / domain_params.cell_size.y);
+    gridPos.z = floor((p.z - domain_params.world_origin.z) / domain_params.cell_size.z);
     return gridPos;
 }
 
@@ -145,7 +147,7 @@ __device__ uint calcGridHash(int3 gridPos)
 //    gridPos.x = gridPos.x & (params.gridSize.x-1);  // wrap grid, assumes size is power of 2
 //    gridPos.y = gridPos.y & (params.gridSize.y-1);
 //    gridPos.z = gridPos.z & (params.gridSize.z-1);
-    return __umul24(__umul24(gridPos.z, params.gridSize.y), params.gridSize.x) + __umul24(gridPos.y, params.gridSize.x) + gridPos.x;
+    return __umul24(__umul24(gridPos.z, domain_params.grid_size.y), domain_params.grid_size.x) + __umul24(gridPos.y, domain_params.grid_size.x) + gridPos.x;
 }
 
 // calculate grid hash value for each particle
@@ -240,44 +242,6 @@ void reorderDataAndFindCellStartD(uint   *cellStart,        // output: cell star
 
 }
 
-// collide two spheres using DEM method
-__device__
-Real3 collideSpheres(Real3 posA, Real3 posB,
-                      Real3 velA, Real3 velB,
-                      Real radiusA, Real radiusB,
-                      Real attraction)
-{
-    // calculate relative position
-    Real3 relPos = posB - posA;
-
-    Real dist = length(relPos);
-    Real collideDist = radiusA + radiusB;
-
-    Real3 force = make_Real3(0.0);
-
-    if (dist < collideDist)
-    {
-        Real3 norm = relPos / dist;
-
-        // relative velocity
-        Real3 relVel = velB - velA;
-
-        // relative tangential velocity
-        Real3 tanVel = relVel - (dot(relVel, norm) * norm);
-
-        // spring force
-        force = -params.spring*(collideDist - dist) * norm;
-        // dashpot (damping) force
-        force += params.damping*relVel;
-        // tangential shear force
-        force += params.shear*tanVel;
-        // attraction
-        force += attraction*relPos;
-    }
-
-    return force;
-}
-
 __device__
 void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 								   Real4 pospres2, Real4 velrhop2, Real massp2,
@@ -289,7 +253,7 @@ void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 	const Real dvx = velrhop1.x - velrhop2.x, dvy =  velrhop1.y - velrhop2.y, dvz =  velrhop1.z - velrhop2.z;
 	Real rr2 = drx*drx + dry*dry + drz*drz;
 
-	if(rr2<=params.four_h_squared && rr2 >=1e-18)
+	if(rr2<=sim_params.four_h_squared && rr2 >=1e-18)
 	{
 		const Real prrhop2 = pospres2.w/(velrhop2.w * velrhop2.w);
 		const Real prrhop1 = pospres1.w/(velrhop1.w * velrhop1.w);
@@ -299,14 +263,14 @@ void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 
 		{//====== Kernel =====
 			const Real rad=sqrt(rr2);
-			const Real qq=rad * params.overSmoothingLength;
+			const Real qq=rad * sim_params.over_smoothing_length;
 			Real fac;
 
 			const Real wqq = 2.0 * qq + 1.0;
 			const Real wqq1 = 1.0 - 0.5 * qq;
 			const Real wqq2 = wqq1 * wqq1;
-			wab = params.wendland_a1 * wqq * wqq2 * wqq2;
-			fac = params.wendland_a2 * qq * wqq2 * wqq1 / rad;
+			wab = sim_params.wendland_a1 * wqq * wqq2 * wqq2;
+			fac = sim_params.wendland_a2 * qq * wqq2 * wqq1 / rad;
 
 			frx = fac * drx; fry = fac * dry; frz = fac * drz;
 		}
@@ -321,9 +285,9 @@ void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 			arp1 += massp2 * (dvx * frx + dvy * fry + dvz * frz);
 		}
 
-		const Real csoun1 = velrhop1.w * params.overRho0;
-		const Real csoun2 = velrhop2.w * params.overRho0;
-	    const Real cbar=(params.cs0 * (csoun1 * csoun1 * csoun1)+ params.cs0 *(csoun2 * csoun2 * csoun2) ) * 0.5;
+		const Real csoun1 = velrhop1.w * sim_params.over_rhop0;
+		const Real csoun2 = velrhop2.w * sim_params.over_rhop0;
+	    const Real cbar=(sim_params.cs0 * (csoun1 * csoun1 * csoun1)+ sim_params.cs0 *(csoun2 * csoun2 * csoun2) ) * 0.5;
 
 	    //===== DeltaSPH =====
 //	    if(tdelta==DELTA_DBC || tdelta==DELTA_DBCExt)
@@ -339,13 +303,13 @@ void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 
 	    {//===== Viscosity =====
 			const Real dot=drx*dvx + dry*dvy + drz*dvz;
-			const Real dot_rr2=dot/(rr2 + params.eta2);
+			const Real dot_rr2=dot/(rr2 + sim_params.epsilon);
 			//-Artificial viscosity.
 	//		if(tvisco==VISCO_Artificial && dot<0)
 			if( dot < 0.0 )
 			{
-			  const Real amubar = params.smoothingLength * dot_rr2;
-			  const Real pi_visc = (-params.visco * cbar * amubar / robar) * massp2;
+			  const Real amubar = sim_params.smoothing_length * dot_rr2;
+			  const Real pi_visc = (-sim_params.nu * cbar * amubar / robar) * massp2;
 			  acep1.x-= pi_visc * frx; acep1.y-=pi_visc*fry; acep1.z-=pi_visc*frz;
 			}
 
@@ -388,13 +352,13 @@ void interact_with_cell(int3 gridPos, //
 				Real4 velrhop2 = FETCH(velrhop,j);
 				Real massp2;
 				int type2 = FETCH(type,j);
-				if(type2 == params.FLUID)
+				if(type2 == FLUID)
 				{
-					massp2 = params.massFluid;
+					massp2 = sim_params.fluid_mass;
 				}
 				else
 				{
-					massp2 = params.massBoundary;
+					massp2 = sim_params.boundary_mass;
 				}
 
 				// collide two particles
@@ -427,7 +391,7 @@ void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration an
     // read particle data from sorted arrays
     Real4 pospres1 = FETCH(pospres,index);
     Real4 velrhop1 = FETCH(velrhop,index);
-    Real massp1 = (FETCH(type,index)=params.FLUID? params.massFluid: params.massBoundary);
+    Real massp1 = (FETCH(type,index)=FLUID? sim_params.fluid_mass: sim_params.boundary_mass);
     Real  visc = viscdt[index]; // Holds max dt value based on viscous considerations
 
     // get address in grid
@@ -490,7 +454,7 @@ void pre_interactionD(Real4 *ace_drhodt, // output: acceleration and drho_dt val
     Real4 pospres1 = FETCH(pospres,index);
     Real4 velrhop1 = FETCH(velrhop,index);
 
-    pospres1.w = params.Bcoeff * ( pow(velrhop1.w * params.overRho0,params.gamma) - 1.0 ); // Compute particle pressure using Tait EOS
+    pospres1.w = sim_params.b_coeff * ( pow(velrhop1.w * sim_params.over_rhop0,sim_params.gamma) - 1.0 ); // Compute particle pressure using Tait EOS
     pospres[index] = pospres1;
 }
 
@@ -499,7 +463,7 @@ void zero_accelerationD(Real4 *ace_drhodt)
 {
 	uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
 
-	if (index >= params.num_bdry) return;
+	if (index >= sim_params.num_boundary_particles) return;
 
 	// set acceleration of static boundary particles to zero.
 	ace_drhodt[index].x = 0.0; ace_drhodt[index].y = 0.0; ace_drhodt[index].z = 0.0;
@@ -516,100 +480,12 @@ void zero_ycomponentD(Real4 *data, uint numParticles)
 	data[index].y = 0.0;
 }
 
-// collide a particle against all other particles in a given cell
-__device__
-Real3 collideCell(int3    gridPos,
-                   uint    index,
-                   Real3  pos,
-                   Real3  vel,
-                   Real4 *oldPos,
-                   Real4 *oldVel,
-                   uint   *cellStart,
-                   uint   *cellEnd)
-{
-    uint gridHash = calcGridHash(gridPos);
-
-    // get start of bucket for this cell
-    uint startIndex = FETCH(cellStart, gridHash);
-
-    Real3 force = make_Real3(0.0);
-
-    if (startIndex != 0xffffffff)          // cell is not empty
-    {
-        // iterate over particles in this cell
-        uint endIndex = FETCH(cellEnd, gridHash);
-
-        for (uint j=startIndex; j<endIndex; j++)
-        {
-            if (j != index)                // check not colliding with self
-            {
-                Real3 pos2 = make_Real3(FETCH(oldPos, j));
-                Real3 vel2 = make_Real3(FETCH(oldVel, j));
-
-                // collide two spheres
-                force += collideSpheres(pos, pos2, vel, vel2, params.particleRadius, params.particleRadius, params.attraction);
-            }
-        }
-    }
-
-    return force;
-}
-
-
-__global__
-void collideD(Real4 *newVel,               // output: new velocity
-              Real4 *oldPos,               // input: sorted positions
-              Real4 *oldVel,               // input: sorted velocities
-              uint   *gridParticleIndex,    // input: sorted particle indices
-              uint   *cellStart,
-              uint   *cellEnd,
-              uint    numParticles)
-{
-    uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
-
-    if (index >= numParticles) return;
-
-    // read particle data from sorted arrays
-    Real3 pos = make_Real3(FETCH(oldPos, index));
-    Real3 vel = make_Real3(FETCH(oldVel, index));
-
-    // get address in grid
-    int3 gridPos = calcGridPos(pos);
-
-    // examine neighbouring cells
-    Real3 force = make_Real3(0.0);
-
-    for (int z=-1; z<=1; z++)
-    {
-        for (int y=-1; y<=1; y++)
-        {
-            for (int x=-1; x<=1; x++)
-            {
-                int3 neighbourPos = gridPos + make_int3(x, y, z);
-
-                // Check to see if cell exists
-                if(cellExists(neighbourPos))
-                {
-                	force += collideCell(neighbourPos, index, pos, vel, oldPos, oldVel, cellStart, cellEnd);
-                }
-            }
-        }
-    }
-
-    // collide with cursor sphere
-    force += collideSpheres(pos, params.colliderPos, vel, make_Real3(0.0, 0.0, 0.0), params.particleRadius, params.colliderRadius, 0.0);
-
-    // write new velocity back to original unsorted location
-    uint originalIndex = gridParticleIndex[index];
-    newVel[originalIndex] = make_Real4(vel + force, 0.0);
-}
-
 __device__
 int cellExists(int3 gridPos)
 {
 	// Checks grid position against grid limits
-	if( (gridPos.x >= 0) && (gridPos.x <= params.gridSize.x - 1) && (gridPos.y >= 0) && (gridPos.y <= params.gridSize.y - 1)
-			&& (gridPos.z >= 0) && (gridPos.z <= params.gridSize.z - 1))
+	if( (gridPos.x >= 0) && (gridPos.x <= params.grid_size.x - 1) && (gridPos.y >= 0) && (gridPos.y <= params.grid_size.y - 1)
+			&& (gridPos.z >= 0) && (gridPos.z <= params.grid_size.z - 1))
 	{
 		return 1;
 	}

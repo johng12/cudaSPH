@@ -21,7 +21,7 @@ extern "C"
     void copyArrayFromDevice(void *host, const void *device, int offset, int size);
     void copyArrayToDevice(void *device, const void *host, int offset, int size);
 
-    void setParameters(SimParams *hostParams);
+    void setParameters(domain_parameters *hostParams);
 
     void predictorStep(Real *pos,
                          Real *vel,

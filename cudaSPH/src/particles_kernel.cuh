@@ -25,66 +25,67 @@
 
 
 typedef unsigned int uint;
+enum type_of_particle { FLUID, BOUNDARY };
+enum simulation_type {ONE_D, TWO_D, THREE_D};
+enum periodicity {NONE, IN_X, IN_Y, IN_Z};
 
-// simulation parameters
-struct SimParams
+// Physical and SPH simulation parameters
+struct simulation_parameters
+{
+	// Numbers of particles
+	uint num_particles;
+	uint num_fluid_particles;
+	uint num_boundary_particles;
+
+	// Parameters used in force computations
+	Real3 gravity; // body force per unit mass due to gravity m/s^2
+	Real smoothing_length; // m^3
+	Real over_smoothing_length; // 1/smoothing_length
+	Real four_h_squared; // (2*smoothing_length)^2
+	Real rhop0; // Reference density kg/m^3
+	Real over_rhop0; // = 1/rho0
+	Real fluid_mass; // Mass of a fluid particle, kg
+	Real boundary_mass; // Mass of a boundary particle, kg
+	Real cs0; // Speed of sound (m/s) at reference density.
+	Real wendland_a1,wendland_a2; // Constants for the Wendland kernel
+	Real epsilon; // small number used in artificial viscosity model to avoid division by 0
+	Real nu; // dynamic viscosity
+	Real cfl_number; // courant-friedric-levy number
+
+	// Tait EOS parameters
+	Real gamma; // ratio of specific heats
+	Real b_coeff; // stiffness parameter used in Tait equation of state
+};
+
+// domain parameters
+struct domain_parameters
 {
 	// Uniform Search Grid Parameters
-	uint3 gridSize; // Number of grid cells in each dimension (x,y,z)
-	uint numCells; // Total number of grid cells = gridSize.x*gridSize.y*gridSize.z
-	Real3 worldOrigin; // Minimum point of bounding box
-	Real3 worldSize; // Size of bounding box
-	Real3 cellSize; // Dimensions of a single grid cell = 2 * smoothingLength
+	uint3 grid_size; // Number of grid cells in each dimension (x,y,z)
+	uint num_cells; // Total number of grid cells = gridSize.x*gridSize.y*gridSize.z
+	Real3 world_origin; // Minimum point of bounding box
+	Real3 world_size; // Size of bounding box
+	Real3 cell_size; // Dimensions of a single grid cell = 2 * smoothing_length
 
 	// Neighbor Search Statistics
 	uint maxParticlesInCell; // Number of particles in most populated grid cell
 	uint maxNeighbors; // Largest number of particle interactions
 	uint minNeighbors; // Lowest number of particle interactions
 	uint aveNeighbors; // Average number of interactions for the system
+};
 
-	// Types of Particles
-	int FLUID;
-	int BOUNDARY;
+// execution parameters
+struct execution_parameters
+{
+	simulation_type simulation_dimension; // Simulation type (1D, 2D, or 3D)
+	Real save_interval; // time between output file writes
+	Real print_interval; // time between simulation summary writes to screen
+	uint density_renormalization_frequency = 30; // frequency with which to apply sheppard filter, default is 30
+	string working_directory; // directory executable is called from
+	string output_directory; // directory where code will place all output files
+	Real fixed_dt = 0; // fixed time step value. Default is to use adaptive time stepping
+	periodicity periodic_in = NONE; // used for periodic bounary conditions. Default is none
 
-	// Parameters used in force computations
-	Real3 gravity;
-	Real smoothingLength; // m^3
-	Real overSmoothingLength; // 1/smoothingLength
-	Real rho0; // Reference density kg/m^3
-	Real overRho0; // = 1/rho0
-	Real massFluid; // Mass of a fluid particle, kg
-	Real massBoundary; // Mass of a boundary particle, kg
-	Real cs0; // Speed of sound (m/s) at reference density.
-	Real wendland_a1,wendland_a2; // Constants for the Wendland kernel
-	Real four_h_squared;
-	Real eta2;
-	Real visco;
-	Real cfl_number;
-
-	// Tait EOS parameters
-	Real gamma;
-	Real Bcoeff;
-
-	// Simulation type (1D, 2D, or 3D)
-	bool simulate_2D;
-
-	// Stuff associated with NVIDIA sample - to be deleted in future.
-    Real3 colliderPos;
-    Real  colliderRadius;
-
-    Real globalDamping;
-    Real particleRadius;
-
-    uint numBodies;
-    uint num_particles;
-    uint num_bdry;
-    uint maxParticlesPerCell;
-
-    Real spring;
-    Real damping;
-    Real shear;
-    Real attraction;
-    Real boundaryDamping;
 };
 
 #endif
