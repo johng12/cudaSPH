@@ -73,11 +73,23 @@ extern "C"
 
     }
 
-    void setParameters(domain_parameters *hostParams)
+    void setParameters(simulation_parameters *hostParams)
     {
         // copy parameters to constant memory
-        checkCudaErrors(cudaMemcpyToSymbol(params, hostParams, sizeof(domain_parameters)));
+        checkCudaErrors(cudaMemcpyToSymbol(sim_params, hostParams, sizeof(domain_parameters)));
     }
+
+    void setParameters(domain_parameters *hostParams)
+	{
+		// copy parameters to constant memory
+		checkCudaErrors(cudaMemcpyToSymbol(domain_params, hostParams, sizeof(domain_parameters)));
+	}
+
+    void setParameters(execution_parameters *hostParams)
+	{
+		// copy parameters to constant memory
+		checkCudaErrors(cudaMemcpyToSymbol(exec_params, hostParams, sizeof(domain_parameters)));
+	}
 
     //Round a / b to nearest higher integer value
     uint iDivUp(uint a, uint b)

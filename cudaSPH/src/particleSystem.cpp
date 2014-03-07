@@ -30,7 +30,7 @@
 #endif
 
 ParticleSystem::ParticleSystem(uint numParticles) :
-    m_bInitialized(false),
+    initialized_(false),
     numParticles_(numParticles),
     h_pospres_(0),
     h_velrhop_(0),
@@ -104,7 +104,7 @@ ParticleSystem::~ParticleSystem()
 void
 ParticleSystem::_initialize(int numParticles)
 {
-    assert(!m_bInitialized);
+    assert(!initialized_);
 
     numParticles_ = numParticles;
 
@@ -160,13 +160,13 @@ ParticleSystem::_initialize(int numParticles)
     setParameters(&h_simulation_params_);
     setParameters(&h_exec_params_);
 
-    m_bInitialized = true;
+    initialized_ = true;
 }
 
 void
 ParticleSystem::_finalize()
 {
-    assert(m_bInitialized);
+    assert(initialized_);
 
     delete [] h_pospres_;
     delete [] h_velrhop_;
@@ -200,7 +200,7 @@ ParticleSystem::_finalize()
 Real
 ParticleSystem::update(Real deltaTime)
 {
-    assert(m_bInitialized);
+    assert(initialized_);
 
     // update constants
     setParameters(&h_domain_params_);
@@ -388,7 +388,7 @@ ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
 Real *
 ParticleSystem::getArray(ParticleArray array)
 {
-    assert(m_bInitialized);
+    assert(initialized_);
 
 
 	Real *hdata = 0;
@@ -418,7 +418,7 @@ ParticleSystem::getArray(ParticleArray array)
 uint *
 ParticleSystem::getHash()
 {
-    assert(m_bInitialized);
+    assert(initialized_);
 
 	uint *hdata = 0;
 	uint *ddata = 0;
@@ -434,7 +434,7 @@ ParticleSystem::getHash()
 uint *
 ParticleSystem::getIndex()
 {
-    assert(m_bInitialized);
+    assert(initialized_);
 
 	uint *hdata = 0;
 	uint *ddata = 0;
@@ -450,7 +450,7 @@ ParticleSystem::getIndex()
 void
 ParticleSystem::setArray(ParticleArray array, const Real *data, int start, int count)
 {
-    assert(m_bInitialized);
+    assert(initialized_);
 
     switch (array)
     {

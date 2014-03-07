@@ -26,98 +26,23 @@ class ParticleSystem
         ParticleSystem(uint numParticles);
         ~ParticleSystem();
 
-        enum ParticleConfig
-        {
-            CONFIG_RANDOM,
-            CONFIG_GRID,
-            _NUM_CONFIGS
-        };
-
-        enum ParticleArray
-        {
-            POSITION,
-            VELOCITY,
-            DENSITY,
-            HASH
-        };
-
         Real update(Real deltaTime);
         void reset(ParticleConfig config);
-
-        Real *getArray(ParticleArray array);
-        uint *getHash();
-        uint *getIndex();
-        void   setArray(ParticleArray array, const Real *data, int start, int count);
-
-        int    getNumParticles() const
-        {
-            return numParticles_;
-        }
 
         void dumpGrid();
         void dumpParticles(uint start, uint count, const char *fileName);
         void dumpParameters();
 
-        void setIterations(int i)
-        {
-            m_solverIterations = i;
-        }
+        void setArray(ParticleArray array, const Real *data, int start, int count);
+        void setGravity(Real3 x) {h_simulation_params_.gravity = x;}
+        void setGridSize(uint3 x) {h_domain_params_.grid_size = x;}
+        void setWorldOrigin(Real3 x) {h_domain_params_.world_origin = x;}
 
-        void setDamping(Real x)
-        {
-            h_domain_params_.globalDamping = x;
-        }
-        void setGravity(Real x)
-        {
-            h_domain_params_.gravity = make_Real3(0.0, x, 0.0);
-        }
-
-        void setCollideSpring(Real x)
-        {
-            h_domain_params_.spring = x;
-        }
-        void setCollideDamping(Real x)
-        {
-            h_domain_params_.damping = x;
-        }
-        void setCollideShear(Real x)
-        {
-            h_domain_params_.shear = x;
-        }
-        void setCollideAttraction(Real x)
-        {
-            h_domain_params_.attraction = x;
-        }
-
-        void setColliderPos(Real3 x)
-        {
-            h_domain_params_.colliderPos = x;
-        }
-
-        Real getParticleRadius()
-        {
-            return h_domain_params_.particleRadius;
-        }
-        Real3 getColliderPos()
-        {
-            return h_domain_params_.colliderPos;
-        }
-        Real getColliderRadius()
-        {
-            return h_domain_params_.colliderRadius;
-        }
-        uint3 getGridSize()
-        {
-            return h_domain_params_.grid_size;
-        }
-        Real3 getWorldOrigin()
-        {
-            return h_domain_params_.world_origin;
-        }
-        Real3 getCellSize()
-        {
-            return h_domain_params_.cell_size;
-        }
+        Real *getArray(ParticleArray array);
+        int	getNumParticles() const {return h_simulation_params_.num_particles;}
+        Real3 getWorldOrigin() {return h_domain_params_.world_origin;}
+        Real3 getCellSize() {return h_domain_params_.cell_size;}
+        uint3 getGridSize() const {return h_domain_params_.grid_size;}
 
     protected: // methods
         ParticleSystem() {}
@@ -128,7 +53,7 @@ class ParticleSystem
         void initGrid(uint *size, Real spacing, Real jitter, uint numParticles);
 
     protected: // data
-        bool m_bInitialized;
+        bool initialized_;
         uint numParticles_;
 
         // CPU particle data
@@ -168,9 +93,7 @@ class ParticleSystem
         uint  *d_cell_start_;        // index of start of each cell in sorted list
         uint  *d_cell_end_;          // index of end of cell
 
-        uint   m_gridSortBits; // A left over from the cuda particles code - don't know what this is for.
-
-        // parameters
+        // parameters for simulation, neighbor search, and execution
         simulation_parameters h_simulation_params_;
         domain_parameters h_domain_params_;
         execution_parameters h_exec_params_;
@@ -180,7 +103,6 @@ class ParticleSystem
 
         StopWatchInterface *m_timer;
 
-        uint m_solverIterations;
 };
 
 #endif // __PARTICLESYSTEM_H__
