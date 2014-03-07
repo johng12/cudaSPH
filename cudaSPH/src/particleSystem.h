@@ -18,27 +18,26 @@
 #include <helper_functions.h>
 #include "particles_kernel.cuh"
 #include "vector_functions.h"
+#include <string>
 
 // Particle system class
 class ParticleSystem
 {
     public:
-        ParticleSystem(uint numParticles);
-        ~ParticleSystem();
+        ParticleSystem(uint numParticles); // Constructor
+        ~ParticleSystem(); // Delete particle system
 
-        Real update(Real deltaTime);
-        void reset(ParticleConfig config);
+        Real update(Real deltaTime); // Integrates particle system in time
+        void load(std::string config); // Loads initial particle distribution from input file
 
-        void dumpGrid();
-        void dumpParticles(uint start, uint count, const char *fileName);
+        void dumpGrid(); // Prints out grid info
+        void dumpParticles(uint start, uint count, const char *fileName); // Prints particle positions to a file
         void dumpParameters();
 
-        void setArray(ParticleArray array, const Real *data, int start, int count);
         void setGravity(Real3 x) {h_simulation_params_.gravity = x;}
         void setGridSize(uint3 x) {h_domain_params_.grid_size = x;}
         void setWorldOrigin(Real3 x) {h_domain_params_.world_origin = x;}
 
-        Real *getArray(ParticleArray array);
         int	getNumParticles() const {return h_simulation_params_.num_particles;}
         Real3 getWorldOrigin() {return h_domain_params_.world_origin;}
         Real3 getCellSize() {return h_domain_params_.cell_size;}

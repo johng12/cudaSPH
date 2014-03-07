@@ -80,10 +80,10 @@ struct execution_parameters
 	simulation_type simulation_dimension; // Simulation type (1D, 2D, or 3D)
 	Real save_interval; // time between output file writes
 	Real print_interval; // time between simulation summary writes to screen
-	uint density_renormalization_frequency = 30; // frequency with which to apply sheppard filter, default is 30
+	uint density_renormalization_frequency; // frequency with which to apply sheppard filter, default is 30
 	string working_directory; // directory executable is called from
 	string output_directory; // directory where code will place all output files
-	Real fixed_dt = 0; // fixed time step value. Default is to use adaptive time stepping
+	Real fixed_dt; // fixed time step value. Default is to use adaptive time stepping
 	periodicity periodic_in = NONE; // used for periodic bounary conditions. Default is none
 
 };
