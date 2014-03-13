@@ -72,7 +72,7 @@ extern "C" void copyArrayFromDevice(void *host, const void *device, int size);
 void initParticleSystem(int numParticles)
 {
     psystem = new ParticleSystem(numParticles);
-    psystem->reset(ParticleSystem::CONFIG_GRID);
+//    psystem->reset(ParticleSystem::CONFIG_GRID);
 
     sdkCreateTimer(&timer);
 }

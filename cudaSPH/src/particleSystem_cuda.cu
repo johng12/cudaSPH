@@ -29,7 +29,7 @@
 
 #include "particles_kernel_impl.cuh"
 
-extern "C"
+namespace gpusph
 {
 
     void cudaInit(int argc, char **argv)
@@ -73,23 +73,23 @@ extern "C"
 
     }
 
-    void setParameters(simulation_parameters *hostParams)
+    void set_sim_parameters(simulation_parameters *hostParams)
     {
         // copy parameters to constant memory
         checkCudaErrors(cudaMemcpyToSymbol(sim_params, hostParams, sizeof(domain_parameters)));
     }
 
-    void setParameters(domain_parameters *hostParams)
+    void set_domain_parameters(domain_parameters *hostParams)
 	{
 		// copy parameters to constant memory
 		checkCudaErrors(cudaMemcpyToSymbol(domain_params, hostParams, sizeof(domain_parameters)));
 	}
 
-    void setParameters(execution_parameters *hostParams)
-	{
-		// copy parameters to constant memory
-		checkCudaErrors(cudaMemcpyToSymbol(exec_params, hostParams, sizeof(domain_parameters)));
-	}
+//    void set_exec_parameters(execution_parameters *hostParams)
+//	{
+//		// copy parameters to constant memory
+//		checkCudaErrors(cudaMemcpyToSymbol(exec_params, hostParams, sizeof(domain_parameters)));
+//	}
 
     //Round a / b to nearest higher integer value
     uint iDivUp(uint a, uint b)
@@ -108,6 +108,7 @@ extern "C"
                          Real *velrhop,
                          Real *pospres_pre,
                          Real *velrhop_pre,
+                         Real *ace_drhodt,
                          Real deltaTime,
                          uint numParticles)
     {
@@ -115,10 +116,11 @@ extern "C"
         thrust::device_ptr<Real4> d_vel4((Real4 *)velrhop);
         thrust::device_ptr<Real4> d_pospre4((Real4 *)pospres_pre);
         thrust::device_ptr<Real4> d_velpre4((Real4 *)velrhop_pre);
+        thrust::device_ptr<Real4> d_ace_drhodt4((Real4 *) ace_drhodt);
 
         thrust::for_each(
-            thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4,d_pospre4,d_velpre4)),
-            thrust::make_zip_iterator(thrust::make_tuple(d_pos4+numParticles, d_vel4+numParticles,d_pospre4+numParticles,d_velpre4+numParticles)),
+            thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4,d_pospre4,d_velpre4,d_ace_drhodt4)),
+            thrust::make_zip_iterator(thrust::make_tuple(d_pos4+numParticles, d_vel4+numParticles,d_pospre4+numParticles,d_velpre4+numParticles, d_ace_drhodt4+numParticles)),
             integrate_predictor(deltaTime));
     }
 
@@ -126,6 +128,7 @@ extern "C"
                          Real *vel,
                          Real *pospre,
                          Real *velpre,
+                         Real *ace_drhodt,
                          Real deltaTime,
                          uint numParticles)
     {
@@ -133,10 +136,11 @@ extern "C"
         thrust::device_ptr<Real4> d_vel4((Real4 *)vel);
         thrust::device_ptr<Real4> d_pospre4((Real4 *)pospre);
 		thrust::device_ptr<Real4> d_velpre4((Real4 *)velpre);
+		thrust::device_ptr<Real4> d_ace_drhodt4((Real4 *)ace_drhodt);
 
         thrust::for_each(
-                thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4,d_pospre4,d_velpre4)),
-                thrust::make_zip_iterator(thrust::make_tuple(d_pos4+numParticles, d_vel4+numParticles,d_pospre4+numParticles,d_velpre4+numParticles)),
+                thrust::make_zip_iterator(thrust::make_tuple(d_pos4, d_vel4,d_pospre4,d_velpre4,d_ace_drhodt4)),
+                thrust::make_zip_iterator(thrust::make_tuple(d_pos4+numParticles, d_vel4+numParticles,d_pospre4+numParticles,d_velpre4+numParticles,d_ace_drhodt4+numParticles)),
                 integrate_corrector(deltaTime));
     }
 
@@ -162,10 +166,12 @@ extern "C"
                                      uint  *cellEnd,
                                      Real *sortedPos,
                                      Real *sortedVel,
+                                     uint *sortedType,
                                      uint  *gridParticleHash,
                                      uint  *gridParticleIndex,
                                      Real *oldPos,
                                      Real *oldVel,
+                                     uint *oldType,
                                      uint   numParticles,
                                      uint   numCells)
     {
@@ -186,10 +192,12 @@ extern "C"
             cellEnd,
             (Real4 *) sortedPos,
             (Real4 *) sortedVel,
+            sortedType,
             gridParticleHash,
             gridParticleIndex,
             (Real4 *) oldPos,
             (Real4 *) oldVel,
+            oldType,
             numParticles);
         getLastCudaError("Kernel execution failed: reorderDataAndFindCellStartD");
 
@@ -198,7 +206,26 @@ extern "C"
         checkCudaErrors(cudaUnbindTexture(oldVelTex));
 #endif
     }
-
+    //    template < typename T >
+    //    T cuda_sum(T *data, uint numElements)
+    //    {
+    //    	T result = thrust::reduce(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+    //    	return result;
+    //    }
+    //
+    //    template < typename T >
+    //    T cuda_max(T *data, uint numElements)
+    //    {
+    //    	T result = thrust::max_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+    //    	return result;
+    //    }
+    //
+    //    template < typename T >
+    //    T cuda_min(T *data, uint numElements)
+    //    {
+    //    	T result = thrust::min_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+    //		return result;
+    //    }
     void pre_interaction(Real *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
 			   Real *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
 			   Real *pospres, // input: sorted particle positions and pressures
@@ -219,18 +246,20 @@ extern "C"
         getLastCudaError("Kernel execution failed");
     }
 
-    void collide(Real *newVel,
-                 Real *sortedPos,
-                 Real *sortedVel,
+    void compute_interactions(Real *ace_drhodt,
+                 Real *sorted_velrhop,
+                 Real *sorted_pospres,
                  uint  *gridParticleIndex,
                  uint  *cellStart,
                  uint  *cellEnd,
+                 int   *sorted_type,
+                 Real  *viscdt,
                  uint   numParticles,
                  uint   numCells)
     {
 #if USE_TEX
-        checkCudaErrors(cudaBindTexture(0, oldPosTex, sortedPos, numParticles*sizeof(Real4)));
-        checkCudaErrors(cudaBindTexture(0, oldVelTex, sortedVel, numParticles*sizeof(Real4)));
+        checkCudaErrors(cudaBindTexture(0, oldPosTex, sorted_pospres, numParticles*sizeof(Real4)));
+        checkCudaErrors(cudaBindTexture(0, oldVelTex, sorted_velrhop, numParticles*sizeof(Real4)));
         checkCudaErrors(cudaBindTexture(0, cellStartTex, cellStart, numCells*sizeof(uint)));
         checkCudaErrors(cudaBindTexture(0, cellEndTex, cellEnd, numCells*sizeof(uint)));
 #endif
@@ -240,13 +269,15 @@ extern "C"
         computeGridSize(numParticles, 64, numBlocks, numThreads);
 
         // execute the kernel
-        collideD<<< numBlocks, numThreads >>>((Real4 *)newVel,
-                                              (Real4 *)sortedPos,
-                                              (Real4 *)sortedVel,
-                                              gridParticleIndex,
-                                              cellStart,
-                                              cellEnd,
-                                              numParticles);
+        compute_particle_interactions<<< numBlocks, numThreads >>>((Real4 *) ace_drhodt,
+																   (Real4 *) sorted_velrhop,
+																   (Real4 *) sorted_pospres,
+																   gridParticleIndex,
+																   cellStart,
+																   cellEnd,
+																   sorted_type,
+																   viscdt,
+																   numParticles);
 
         // check if kernel invocation generated an error
         getLastCudaError("Kernel execution failed");
@@ -267,41 +298,26 @@ extern "C"
                             thrust::device_ptr<uint>(dGridParticleIndex));
     }
 
-    template < typename T >
-    T cuda_sum(T *data, uint numElements)
-    {
-    	T result = thrust::reduce(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
-    	return result;
-    }
-
-    template < typename T >
-    T cuda_max(T *data, uint numElements)
-    {
-    	T result = thrust::max_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
-    	return result;
-    }
-
-    template < typename T >
-    T cuda_min(T *data, uint numElements)
-    {
-    	T result = thrust::min_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
-		return result;
-    }
-
+//    template < typename T >
+//    T cuda_sum(T *data, uint numElements)
+//    {
+//    	T result = thrust::reduce(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+//    	return result;
+//    }
+//
     Real
-    get_time_step(Real *max_acceleration, Real *max_sound_speed, Real *max_visc_dt)
+    cuda_max(Real *data, uint numElements)
     {
-      //-dt1 depends on force per unit mass.
-      const Real dt1=(max_acceleration? (sqrt(params.smoothingLength)/sqrt(sqrt(max_acceleration))): FLT_MAX);
-
-      //-dt2 combines the Courant and the viscous time-step controls.
-      const Real dt2=(max_sound_speed||max_visc_dt? (params.smoothingLength/(max_sound_speed+params.smoothingLength*max_visc_dt)): FLT_MAX);
-
-      //-dt new value of time step.
-      Real dt=params.cfl_number*min(dt1,dt2);
-      //if(DtFixed)dt=DtFixed->GetDt(TimeStep,dt);
-      if(dt < dt_min){ dt = dt_min; }
-      return(dt);
+    	Real result = thrust::max_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+    	return result;
     }
 
-}   // extern "C"
+//
+//    template < typename T >
+//    T cuda_min(T *data, uint numElements)
+//    {
+//    	T result = thrust::min_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
+//		return result;
+//    }
+
+}   // namespace gpusph

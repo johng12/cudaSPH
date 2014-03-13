@@ -57,6 +57,7 @@ ParticleSystem::ParticleSystem(uint numParticles) :
 	d_visc_dt_(0),
 	d_max_accel_(0),
 	d_max_sound_speed_(0),
+	d_norm_ace_(0),
 
 	d_density_sum_(0),
 	d_kernel_sum_(0),
@@ -169,6 +170,7 @@ ParticleSystem::_initialize(int numParticles)
     allocateArray((void **)&d_sorted_type_, sizeof(uint) * numParticles_);
 
     allocateArray((void **)&d_visc_dt_,sizeof(Real) * numParticles_);
+    allocateArray((void **)&d_norm_ace_,sizeof(Real) * numParticles_);
     allocateArray((void **)&d_max_accel_,sizeof(Real));
     allocateArray((void **)&d_max_sound_speed_,sizeof(Real));
 
@@ -182,9 +184,9 @@ ParticleSystem::_initialize(int numParticles)
 
     sdkCreateTimer(&m_timer);
 
-    setParameters(&h_domain_params_);
-    setParameters(&h_simulation_params_);
-    setParameters(&h_exec_params_);
+    set_domain_parameters(&h_domain_params_);
+    set_sim_parameters(&h_simulation_params_);
+    //set_exec_parameters(&h_exec_params_);
 
     initialized_ = true;
 }
@@ -252,31 +254,35 @@ ParticleSystem::update(Real deltaTime)
 //			d_cell_end_,
 //			d_sorted_pospres_,
 //			d_sorted_velrhop_,
+//			d_sorted_type_,
 //			d_particle_hash_,
 //			d_particle_index_,
-//			d_pospres_pre_,
-//			d_velrhop_pre_,
+//			d_pospres_,
+//			d_velrhop_,
+//			d_particle_type_,
 //			numParticles_,
 //			h_numGridCells_);
 //
 //		// prepare variables for interaction
 //		// zero accel arrays, get pressures, etc.
+//		// prepare data for interactions
 //		pre_interaction(d_ace_drho_dt_,
-//						d_velrhop_,
-//						d_pospres_,
+//						d_sorted_velrhop_,
+//						d_sorted_pospres_,
 //						d_visc_dt_,
 //						numParticles_);
-//
+
 //		// process particle interactions
-//		collide(
-//			d_velrhop_,
-//			d_sorted_pospres_,
-//			d_sorted_velrhop_,
-//			d_particle_index_,
-//			d_cell_start_,
-//			d_cell_end_,
-//			numParticles_,
-//			h_numGridCells_);
+//		compute_interactions(d_ace_drho_dt_,
+//							 d_sorted_velrhop_,
+//							 d_sorted_pospres_,
+//							 d_particle_index_,
+//							 d_cell_start_,
+//							 d_cell_end_,
+//							 d_sorted_type_,
+//							 d_visc_dt_,
+//							 numParticles_,
+//							 h_numGridCells_);
 //
 //		// get time step
 //		deltaTime = get_time_step(d_visc_dt_,numParticles_);
@@ -315,30 +321,33 @@ ParticleSystem::update(Real deltaTime)
 //			d_cell_end_,
 //			d_sorted_pospres_,
 //			d_sorted_velrhop_,
+//			d_sorted_type_,
 //			d_particle_hash_,
 //			d_particle_index_,
 //			d_pospres_pre_,
 //			d_velrhop_pre_,
+//			d_particle_type_,
 //			numParticles_,
 //			h_numGridCells_);
 //
 //		// prepare data for interactions
 //		pre_interaction(d_ace_drho_dt_,
-//								d_velrhop_,
-//								d_pospres_,
-//								d_visc_dt_,
-//								numParticles_);
+//						d_sorted_velrhop_,
+//						d_sorted_pospres_,
+//						d_visc_dt_,
+//						numParticles_);
 //
 //		// process particle interactions
-//		collide(
-//			d_velrhop_,
-//			d_sorted_pospres_,
-//			d_sorted_velrhop_,
-//			d_particle_index_,
-//			d_cell_start_,
-//			d_cell_end_,
-//			numParticles_,
-//			h_numGridCells_);
+//		compute_interactions(d_ace_drho_dt_,
+//    						 d_sorted_velrhop_,
+//							 d_sorted_pospres_,
+//							 d_particle_index_,
+//							 d_cell_start_,
+//							 d_cell_end_,
+//							 d_sorted_type_,
+//							 d_visc_dt_,
+//							 numParticles_,
+//							 h_numGridCells_);
 //
 //		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
 //		zero_acceleration(d_ace_drho_dt_);
@@ -504,4 +513,26 @@ ParticleSystem::load(std::string config)
 
 	else cout << "Unable to open file containing initial particle distribution";
 
+}
+
+Real
+ParticleSystem::get_time_step()
+{
+	cuda_vector_norm(d_ace_drho_dt_,d_norm_ace_);
+	Real max_acceleration = cuda_max(d_mod_ace_,numParticles_);
+	Real max_visc_dt = cuda_max(d_visc_dt_,numParticles_);
+	Real max_sound_speed = cuda_max();
+    Real smoothing_length = h_simulation_params_.smoothing_length;
+
+    //-dt1 depends on force per unit mass.
+	const Real dt1=(max_acceleration? (sqrt(smoothing_length)/sqrt(sqrt(max_acceleration))): FLT_MAX);
+
+	//-dt2 combines the Courant and the viscous time-step controls.
+    const Real dt2=(max_sound_speed||max_visc_dt? (smoothing_length/(max_sound_speed+smoothing_length*max_visc_dt)): FLT_MAX);
+
+    //-dt new value of time step.
+    Real dt=h_simulation_params_.cfl_number*min(dt1,dt2);
+    //if(DtFixed)dt=DtFixed->GetDt(TimeStep,dt);
+    //if(dt < dt_min){ dt = dt_min; }
+    return(dt);
 }

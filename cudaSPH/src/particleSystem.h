@@ -42,6 +42,7 @@ class ParticleSystem
         Real3 getWorldOrigin() {return h_domain_params_.world_origin;}
         Real3 getCellSize() {return h_domain_params_.cell_size;}
         uint3 getGridSize() const {return h_domain_params_.grid_size;}
+        Real get_time_step();
 
     protected: // methods
         ParticleSystem() {}
@@ -81,6 +82,7 @@ class ParticleSystem
         Real *d_visc_dt_; // holds maximum dt value of each particle based on viscous considerations. (See Lui and Lui, 2003)
         Real *d_max_accel_; // holds maximum acceleration of all particles
         Real *d_max_sound_speed_; // holds maximum sound speed of all particles
+        Real *d_norm_ace_; // Norm of particle acceleration: sqrt(a.x^2 + a.y^2 + a.z^2)
 
         // Sheppard filter data
         Real *d_density_sum_; // density summation for each particle (rho(i) = Sum[ rho(j) * W_ij * Vol(j) ] for j = 1,2,...,N.

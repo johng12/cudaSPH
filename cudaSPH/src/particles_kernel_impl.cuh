@@ -36,9 +36,7 @@ texture<uint, 1, cudaReadModeElementType> cellEndTex;
 // simulation parameters in constant memory
 __constant__ domain_parameters domain_params;
 __constant__ simulation_parameters sim_params;
-__constant__ execution_parameters exec_params;
-
-__device__ int cellExists(int3 cellPos);
+//__constant__ execution_parameters exec_params;
 
 struct integrate_predictor
 {
@@ -179,10 +177,12 @@ void reorderDataAndFindCellStartD(uint   *cellStart,        // output: cell star
                                   uint   *cellEnd,          // output: cell end index
                                   Real4 *sortedPos,        // output: sorted positions
                                   Real4 *sortedVel,        // output: sorted velocities
+                                  uint  *sortedType,
                                   uint   *gridParticleHash, // input: sorted grid hashes
                                   uint   *gridParticleIndex,// input: sorted particle indices
                                   Real4 *oldPos,           // input: sorted position array
                                   Real4 *oldVel,           // input: sorted velocity array
+                                  uint  *oldType,
                                   uint    numParticles)
 {
     extern __shared__ uint sharedHash[];    // blockSize + 1 elements
@@ -234,9 +234,11 @@ void reorderDataAndFindCellStartD(uint   *cellStart,        // output: cell star
         uint sortedIndex = gridParticleIndex[index];
         Real4 pos = FETCH(oldPos, sortedIndex);       // macro does either global read or texture fetch
         Real4 vel = FETCH(oldVel, sortedIndex);       // see particles_kernel.cuh
+        uint p_type = FETCH(oldType, sortedIndex);
 
         sortedPos[index] = pos;
         sortedVel[index] = vel;
+        sortedType[index] = p_type;
     }
 
 
@@ -245,7 +247,7 @@ void reorderDataAndFindCellStartD(uint   *cellStart,        // output: cell star
 __device__
 void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 								   Real4 pospres2, Real4 velrhop2, Real massp2,
-								   Real4 acep1, Real4 arp1, Real visc)
+								   Real3 acep1, Real arp1, Real visc)
 {
 	Real drx = pospres1.x - pospres2.x;
 	Real dry = pospres1.y - pospres2.y;
@@ -352,6 +354,7 @@ void interact_with_cell(int3 gridPos, //
 				Real4 velrhop2 = FETCH(velrhop,j);
 				Real massp2;
 				int type2 = FETCH(type,j);
+				int FLUID = 1;
 				if(type2 == FLUID)
 				{
 					massp2 = sim_params.fluid_mass;
@@ -391,6 +394,7 @@ void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration an
     // read particle data from sorted arrays
     Real4 pospres1 = FETCH(pospres,index);
     Real4 velrhop1 = FETCH(velrhop,index);
+    int FLUID = 1;
     Real massp1 = (FETCH(type,index)=FLUID? sim_params.fluid_mass: sim_params.boundary_mass);
     Real  visc = viscdt[index]; // Holds max dt value based on viscous considerations
 
@@ -449,7 +453,7 @@ void pre_interactionD(Real4 *ace_drhodt, // output: acceleration and drho_dt val
 
     if (index >= numParticles) return;
 
-    ace_drhodt[index] = 0.0; // initialize acceleration accumulators to zero
+    ace_drhodt[index].x = 0.0; ace_drhodt[index].y = 0.0; ace_drhodt[index].z = 0.0; ace_drhodt[index].w = 0.0; // initialize acceleration accumulators to zero
     viscdt[index] = 0.0; // initialize viscous time step tracker to zero
     Real4 pospres1 = FETCH(pospres,index);
     Real4 velrhop1 = FETCH(velrhop,index);
@@ -484,8 +488,8 @@ __device__
 int cellExists(int3 gridPos)
 {
 	// Checks grid position against grid limits
-	if( (gridPos.x >= 0) && (gridPos.x <= params.grid_size.x - 1) && (gridPos.y >= 0) && (gridPos.y <= params.grid_size.y - 1)
-			&& (gridPos.z >= 0) && (gridPos.z <= params.grid_size.z - 1))
+	if( (gridPos.x >= 0) && (gridPos.x <= domain_params.grid_size.x - 1) && (gridPos.y >= 0) && (gridPos.y <= domain_params.grid_size.y - 1)
+			&& (gridPos.z >= 0) && (gridPos.z <= domain_params.grid_size.z - 1))
 	{
 		return 1;
 	}
