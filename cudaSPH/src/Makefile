@@ -100,7 +100,7 @@ ALL_LDFLAGS += $(EXTRA_NVCCLDFLAGS)
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I/home/grad1/johng12/cuda-workspace/common/inc
+INCLUDES  := -I /usr/local/cuda-5.5/samples/common/inc
 LIBRARIES :=
 
 ################################################################################
