@@ -36,7 +36,7 @@ texture<uint, 1, cudaReadModeElementType> cellEndTex;
 // simulation parameters in constant memory
 __constant__ domain_parameters domain_params;
 __constant__ simulation_parameters sim_params;
-//__constant__ execution_parameters exec_params;
+__constant__ execution_parameters exec_params;
 
 struct integrate_predictor
 {
@@ -325,7 +325,7 @@ __device__
 void interact_with_cell(int3 gridPos, //
 						uint index, // index of particle i
 						Real  massp1, // mass of particle i
-						int   *type, // Ordered particle type data for all particles
+						uint   *type, // Ordered particle type data for all particles
 						Real4 pospres1, // position vector and pressure of particle i
 						Real4 velrhop1, // velocity and density of particle i
 						Real4 *pospres, // Ordered position and pressure data for all particles
@@ -353,8 +353,8 @@ void interact_with_cell(int3 gridPos, //
 				Real4 pospres2 = FETCH(pospres,j);
 				Real4 velrhop2 = FETCH(velrhop,j);
 				Real massp2;
-				int type2 = FETCH(type,j);
-				int FLUID = 1;
+				uint type2 = FETCH(type,j);
+//				uint FLUID = 1;
 				if(type2 == FLUID)
 				{
 					massp2 = sim_params.fluid_mass;
@@ -382,7 +382,7 @@ void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration an
 								   uint *gridParticleIndex, // input: sorted particle indicies
 								   uint *cellStart,
 								   uint *cellEnd,
-								   int  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
+								   uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
 								   Real *viscdt, // output: max time step for adaptive time stepping
 								   uint numParticles)
 
@@ -394,7 +394,7 @@ void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration an
     // read particle data from sorted arrays
     Real4 pospres1 = FETCH(pospres,index);
     Real4 velrhop1 = FETCH(velrhop,index);
-    int FLUID = 1;
+    uint FLUID = 1;
     Real massp1 = (FETCH(type,index)=FLUID? sim_params.fluid_mass: sim_params.boundary_mass);
     Real  visc = viscdt[index]; // Holds max dt value based on viscous considerations
 

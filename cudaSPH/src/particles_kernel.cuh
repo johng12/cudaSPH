@@ -25,9 +25,9 @@
 
 
 typedef unsigned int uint;
-//enum type_of_particle { FLUID, BOUNDARY };
-//enum simulation_type {ONE_D, TWO_D, THREE_D};
-//enum periodicity {NONE, IN_X, IN_Y, IN_Z};
+enum type_of_particle { FLUID, BOUNDARY };
+enum simulation_type {ONE_D, TWO_D, THREE_D};
+enum periodicity {NONE, IN_X, IN_Y, IN_Z};
 
 // Physical and SPH simulation parameters
 struct simulation_parameters
@@ -77,14 +77,14 @@ struct domain_parameters
 // execution parameters
 struct execution_parameters
 {
-	uint simulation_dimension; // Simulation type (1D, 2D, or 3D)
+	simulation_type simulation_dimension; // Simulation type (1D, 2D, or 3D)
 	Real save_interval; // time between output file writes
 	Real print_interval; // time between simulation summary writes to screen
 	uint density_renormalization_frequency; // frequency with which to apply sheppard filter, default is 30
-	std::string working_directory; // directory executable is called from
-	std::string output_directory; // directory where code will place all output files
+//	std::string working_directory; // directory executable is called from
+//	std::string output_directory; // directory where code will place all output files
 	Real fixed_dt; // fixed time step value. Default is to use adaptive time stepping
-	uint periodic_in; // used for periodic boundary conditions. Default is none
+	periodicity periodic_in; // used for periodic boundary conditions. Default is none
 
 };
 
@@ -156,6 +156,7 @@ namespace gpusph
 	void copyArrayFromDevice(void *host, const void *device,int offset, int size);
 	void set_sim_parameters(simulation_parameters *hostParams);
 	void set_domain_parameters(domain_parameters *hostParams);
+	void set_exec_parameters(execution_parameters *hostParams);
 	uint iDivUp(uint a, uint b);
 	void computeGridSize(uint n, uint blockSize, uint &numBlocks, uint &numThreads);
 	void predictorStep(Real *pospres,
@@ -187,7 +188,7 @@ namespace gpusph
 	                                     Real *oldVel,
 	                                     uint *oldType,
 	                                     uint   numParticles,
-	                                     uint   numCells);
+	                                     uint numCells);
 	void pre_interaction(Real *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
 				   Real *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
 				   Real *pospres, // input: sorted particle positions and pressures
@@ -199,11 +200,13 @@ namespace gpusph
 	                 uint  *gridParticleIndex,
 	                 uint  *cellStart,
 	                 uint  *cellEnd,
-	                 int   *sorted_type,
+	                 uint   *sorted_type,
 	                 Real  *viscdt,
 	                 uint   numParticles,
 	                 uint   numCells);
 	void sortParticles(uint *dGridParticleHash, uint *dGridParticleIndex, uint numParticles);
+	void zero_acceleration(Real *ace_drhodt, uint numParticles);
+	void zero_ycomponent(Real *data, uint numParticles);
 	Real cuda_max(Real *data, uint numElements);
 
 }

@@ -22,6 +22,7 @@
 #include <helper_cuda_gl.h>
 
 #include <helper_functions.h>
+#include "thrust/device_vector.h"
 #include "thrust/device_ptr.h"
 #include "thrust/for_each.h"
 #include "thrust/iterator/zip_iterator.h"
@@ -76,7 +77,7 @@ namespace gpusph
     void set_sim_parameters(simulation_parameters *hostParams)
     {
         // copy parameters to constant memory
-        checkCudaErrors(cudaMemcpyToSymbol(sim_params, hostParams, sizeof(domain_parameters)));
+        checkCudaErrors(cudaMemcpyToSymbol(sim_params, hostParams, sizeof(simulation_parameters)));
     }
 
     void set_domain_parameters(domain_parameters *hostParams)
@@ -85,11 +86,11 @@ namespace gpusph
 		checkCudaErrors(cudaMemcpyToSymbol(domain_params, hostParams, sizeof(domain_parameters)));
 	}
 
-//    void set_exec_parameters(execution_parameters *hostParams)
-//	{
-//		// copy parameters to constant memory
-//		checkCudaErrors(cudaMemcpyToSymbol(exec_params, hostParams, sizeof(domain_parameters)));
-//	}
+    void set_exec_parameters(execution_parameters *hostParams)
+	{
+		// copy parameters to constant memory
+		checkCudaErrors(cudaMemcpyToSymbol(exec_params, hostParams, sizeof(execution_parameters)));
+	}
 
     //Round a / b to nearest higher integer value
     uint iDivUp(uint a, uint b)
@@ -173,7 +174,8 @@ namespace gpusph
                                      Real *oldVel,
                                      uint *oldType,
                                      uint   numParticles,
-                                     uint   numCells)
+                                     uint  numCells)
+
     {
         uint numThreads, numBlocks;
         computeGridSize(numParticles, 256, numBlocks, numThreads);
@@ -252,7 +254,7 @@ namespace gpusph
                  uint  *gridParticleIndex,
                  uint  *cellStart,
                  uint  *cellEnd,
-                 int   *sorted_type,
+                 uint   *sorted_type,
                  Real  *viscdt,
                  uint   numParticles,
                  uint   numCells)
@@ -298,6 +300,30 @@ namespace gpusph
                             thrust::device_ptr<uint>(dGridParticleIndex));
     }
 
+    void zero_acceleration(Real *ace_drhodt, uint numParticles)
+    {
+    	// thread per particle
+		uint numThreads, numBlocks;
+		computeGridSize(numParticles, 64, numBlocks, numThreads);
+
+    	zero_accelerationD<<< numBlocks,numThreads >>>( (Real4 *) ace_drhodt);
+
+    	// check if kernel invocation generated an error
+		getLastCudaError("Kernel execution failed");
+    }
+
+    void zero_ycomponent(Real *data, uint numParticles)
+    {
+    	// thread per particle
+		uint numThreads, numBlocks;
+		computeGridSize(numParticles, 64, numBlocks, numThreads);
+
+    	zero_ycomponentD<<< numBlocks,numThreads >>>( (Real4 *) data, numParticles);
+
+    	// check if kernel invocation generated an error
+		getLastCudaError("Kernel execution failed");
+    }
+
 //    template < typename T >
 //    T cuda_sum(T *data, uint numElements)
 //    {
@@ -305,12 +331,17 @@ namespace gpusph
 //    	return result;
 //    }
 //
-    Real
-    cuda_max(Real *data, uint numElements)
-    {
-    	Real result = thrust::max_element(thrust::device_ptr<T>(data),thrust::device_ptr<T>(data + numElements));
-    	return result;
-    }
+//    double
+//    cuda_max(double *data, uint numElements)
+//    {
+//
+//    	thrust::host_vector<double> h_result;
+//    	thrust::device_ptr<double> result = thrust::max_element(thrust::device_ptr<double>(data),thrust::device_ptr<double>(data + numElements));
+//    	h_result = result;
+//    	return h_result;
+//
+//
+//    }
 
 //
 //    template < typename T >

@@ -76,7 +76,7 @@ class ParticleSystem
         uint *d_particle_type_; // particle type (fluid,boundary, etc.)
         Real *d_sorted_pospres_; // stores particle position and pressure data, sorted according to grid index
 		Real *d_sorted_velrhop_; // stores particle velocity and density data, sorted according to grid index
-		Real *d_sorted_type_; // stores particle type data, sorted according to grid index
+		uint *d_sorted_type_; // stores particle type data, sorted according to grid index
 
         // Adaptive time step data
         Real *d_visc_dt_; // holds maximum dt value of each particle based on viscous considerations. (See Lui and Lui, 2003)

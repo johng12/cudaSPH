@@ -67,8 +67,7 @@ ParticleSystem::ParticleSystem(uint numParticles) :
 	d_cell_start_(0),
 	d_cell_end_(0),
 
-    m_timer(NULL),
-    m_solverIterations(1)
+    m_timer(NULL)
 {
 	// set simulation parameters
 	h_simulation_params_.num_particles = numParticles;
@@ -76,7 +75,7 @@ ParticleSystem::ParticleSystem(uint numParticles) :
 	h_simulation_params_.num_boundary_particles = numParticles;
 	h_simulation_params_.gravity = make_Real3(0.0, 0.0, -9.81);
 	h_simulation_params_.smoothing_length = 1.0 / 64.0;
-	h_simulation_params_.over_smoothing_length = 1.0 / h_simulation_params.smoothing_length;
+	h_simulation_params_.over_smoothing_length = 1.0 / h_simulation_params_.smoothing_length;
 	h_simulation_params_.four_h_squared = 4.0 * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length;
 	h_simulation_params_.rhop0 = 1000.0;
 	h_simulation_params_.over_rhop0 = 1.0 / 1000.0;
@@ -94,10 +93,10 @@ ParticleSystem::ParticleSystem(uint numParticles) :
 	// set domain parameters
 	h_domain_params_.world_origin = make_Real3(-1.0, -1.0, -1.0);
     h_domain_params_.world_size = make_Real3(2.0, 2.0, 2.0);
-    Real3 domainMin = h_domain_params_.world_origin - 2.0 * h_domain_params_.smoothingLength;
+    Real3 domainMin = h_domain_params_.world_origin - 2.0 * h_simulation_params_.smoothing_length;
     h_domain_params_.world_origin = domainMin;
-	Real3 domainMax = domainMin + h_domain_params_.world_size + 2.0 * h_domain_params_.smoothingLength;
-    Real cellSize = 2.0 * h_domain_params_.smoothingLength;  // cell size equal to 2*particle smoothing length
+	Real3 domainMax = domainMin + h_domain_params_.world_size + 2.0 * h_simulation_params_.smoothing_length;
+    Real cellSize = 2.0 * h_simulation_params_.smoothing_length;  // cell size equal to 2*particle smoothing length
 	h_domain_params_.cell_size = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
 
 	h_grid_size_.x = floor((domainMax.x - domainMin.x)/h_domain_params_.cell_size.x);
@@ -115,8 +114,6 @@ ParticleSystem::ParticleSystem(uint numParticles) :
     h_exec_params_.print_interval = 1e-3;
     h_exec_params_.save_interval = 1e-3;
     h_exec_params_.simulation_dimension = THREE_D;
-    h_exec_params_.output_directory = "./Case_out/";
-    h_exec_params_.working_directory = "./";
 
     _initialize(numParticles);
 
@@ -159,34 +156,34 @@ ParticleSystem::_initialize(int numParticles)
     // allocate GPU data
     unsigned int memSize = sizeof(Real) * 4 * numParticles_;
 
-	allocateArray((void **)&d_pospres_, memSize);
-    allocateArray((void **)&d_velrhop_, memSize);
-    allocateArray((void **)&d_pospres_pre_, memSize);
-	allocateArray((void **)&d_velrhop_pre_, memSize);
-	allocateArray((void **)&d_ace_drho_dt_, memSize);
-	allocateArray((void **)&d_particle_type_, sizeof(uint) * numParticles_);
-    allocateArray((void **)&d_sorted_pospres_, memSize);
-    allocateArray((void **)&d_sorted_velrhop_, memSize);
-    allocateArray((void **)&d_sorted_type_, sizeof(uint) * numParticles_);
+	gpusph::allocateArray((void **)&d_pospres_, memSize);
+	gpusph::allocateArray((void **)&d_velrhop_, memSize);
+	gpusph::allocateArray((void **)&d_pospres_pre_, memSize);
+	gpusph::allocateArray((void **)&d_velrhop_pre_, memSize);
+	gpusph::allocateArray((void **)&d_ace_drho_dt_, memSize);
+	gpusph::allocateArray((void **)&d_particle_type_, sizeof(uint) * numParticles_);
+	gpusph::allocateArray((void **)&d_sorted_pospres_, memSize);
+	gpusph::allocateArray((void **)&d_sorted_velrhop_, memSize);
+	gpusph::allocateArray((void **)&d_sorted_type_, sizeof(uint) * numParticles_);
 
-    allocateArray((void **)&d_visc_dt_,sizeof(Real) * numParticles_);
-    allocateArray((void **)&d_norm_ace_,sizeof(Real) * numParticles_);
-    allocateArray((void **)&d_max_accel_,sizeof(Real));
-    allocateArray((void **)&d_max_sound_speed_,sizeof(Real));
+	gpusph::allocateArray((void **)&d_visc_dt_,sizeof(Real) * numParticles_);
+	gpusph::allocateArray((void **)&d_norm_ace_,sizeof(Real) * numParticles_);
+	gpusph::allocateArray((void **)&d_max_accel_,sizeof(Real));
+	gpusph::allocateArray((void **)&d_max_sound_speed_,sizeof(Real));
 
-    allocateArray((void **)&d_density_sum_,sizeof(Real) * numParticles_);
-    allocateArray((void **)&d_kernel_sum_, sizeof(Real) * numParticles_);
+	gpusph::allocateArray((void **)&d_density_sum_,sizeof(Real) * numParticles_);
+	gpusph::allocateArray((void **)&d_kernel_sum_, sizeof(Real) * numParticles_);
 
-    allocateArray((void **)&d_particle_hash_, numParticles_*sizeof(uint));
-    allocateArray((void **)&d_particle_index_, numParticles_*sizeof(uint));
-    allocateArray((void **)&d_cell_start_, h_numGridCells_*sizeof(uint));
-    allocateArray((void **)&d_cell_end_, h_numGridCells_*sizeof(uint));
+	gpusph::allocateArray((void **)&d_particle_hash_, numParticles_*sizeof(uint));
+	gpusph::allocateArray((void **)&d_particle_index_, numParticles_*sizeof(uint));
+	gpusph::allocateArray((void **)&d_cell_start_, h_numGridCells_*sizeof(uint));
+	gpusph::allocateArray((void **)&d_cell_end_, h_numGridCells_*sizeof(uint));
 
     sdkCreateTimer(&m_timer);
 
-    set_domain_parameters(&h_domain_params_);
-    set_sim_parameters(&h_simulation_params_);
-    //set_exec_parameters(&h_exec_params_);
+    gpusph::set_domain_parameters(&h_domain_params_);
+    gpusph::set_sim_parameters(&h_simulation_params_);
+    gpusph::set_exec_parameters(&h_exec_params_);
 
     initialized_ = true;
 }
@@ -204,166 +201,170 @@ ParticleSystem::_finalize()
     delete [] h_cell_start_;
     delete [] h_cell_end_;
 
-    freeArray(d_pospres_);
-    freeArray(d_velrhop_);
-    freeArray(d_pospres_pre_);
-    freeArray(d_velrhop_pre_);
-    freeArray(d_ace_drho_dt_);
-    freeArray(d_particle_type_);
-    freeArray(d_sorted_pospres_);
-    freeArray(d_sorted_velrhop_);
-    freeArray(d_sorted_type_);
+    gpusph::freeArray(d_pospres_);
+    gpusph::freeArray(d_velrhop_);
+    gpusph::freeArray(d_pospres_pre_);
+    gpusph::freeArray(d_velrhop_pre_);
+    gpusph::freeArray(d_ace_drho_dt_);
+    gpusph::freeArray(d_particle_type_);
+    gpusph::freeArray(d_sorted_pospres_);
+    gpusph::freeArray(d_sorted_velrhop_);
+    gpusph::freeArray(d_sorted_type_);
 
-    freeArray(d_visc_dt_);
-    freeArray(d_max_accel_);
-    freeArray(d_max_sound_speed_);
+    gpusph::freeArray(d_visc_dt_);
+    gpusph::freeArray(d_max_accel_);
+    gpusph::freeArray(d_max_sound_speed_);
 
-    freeArray(d_density_sum_);
-    freeArray(d_kernel_sum_);
+    gpusph::freeArray(d_density_sum_);
+    gpusph::freeArray(d_kernel_sum_);
 
-    freeArray(d_particle_hash_);
-    freeArray(d_particle_index_);
-    freeArray(d_cell_start_);
-    freeArray(d_cell_end_);
+    gpusph::freeArray(d_particle_hash_);
+    gpusph::freeArray(d_particle_index_);
+    gpusph::freeArray(d_cell_start_);
+    gpusph::freeArray(d_cell_end_);
 }
 
 // step the simulation and return the current time step
 Real
 ParticleSystem::update(Real deltaTime)
 {
-//    assert(initialized_);
-//
-//    // update constants
-//    setParameters(&h_domain_params_);
-//
-//    {//======== Predictor Step =============
-//		// calculate grid hash
-//		calcHash(
-//			d_particle_hash_,
-//			d_particle_index_,
-//			d_pospres_pre_,
-//			numParticles_);
-//
-//		// sort particles based on hash
-//		sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
-//
-//		// reorder particle arrays into sorted order and
-//		// find start and end of each cell
-//		reorderDataAndFindCellStart(
-//			d_cell_start_,
-//			d_cell_end_,
-//			d_sorted_pospres_,
-//			d_sorted_velrhop_,
-//			d_sorted_type_,
-//			d_particle_hash_,
-//			d_particle_index_,
-//			d_pospres_,
-//			d_velrhop_,
-//			d_particle_type_,
-//			numParticles_,
-//			h_numGridCells_);
-//
-//		// prepare variables for interaction
-//		// zero accel arrays, get pressures, etc.
-//		// prepare data for interactions
-//		pre_interaction(d_ace_drho_dt_,
-//						d_sorted_velrhop_,
-//						d_sorted_pospres_,
-//						d_visc_dt_,
-//						numParticles_);
+    assert(initialized_);
 
-//		// process particle interactions
-//		compute_interactions(d_ace_drho_dt_,
-//							 d_sorted_velrhop_,
-//							 d_sorted_pospres_,
-//							 d_particle_index_,
-//							 d_cell_start_,
-//							 d_cell_end_,
-//							 d_sorted_type_,
-//							 d_visc_dt_,
-//							 numParticles_,
-//							 h_numGridCells_);
+    // update constants
+    gpusph::set_domain_parameters(&h_domain_params_);
+	gpusph::set_sim_parameters(&h_simulation_params_);
+    gpusph::set_exec_parameters(&h_exec_params_);
+
+    {//======== Predictor Step =============
+		// calculate grid hash
+		gpusph::calcHash(
+			d_particle_hash_,
+			d_particle_index_,
+			d_pospres_pre_,
+			numParticles_);
+
+		// sort particles based on hash
+		gpusph::sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
+
+		// reorder particle arrays into sorted order and
+		// find start and end of each cell
+		gpusph::reorderDataAndFindCellStart(
+			d_cell_start_,
+			d_cell_end_,
+			d_sorted_pospres_,
+			d_sorted_velrhop_,
+			d_sorted_type_,
+			d_particle_hash_,
+			d_particle_index_,
+			d_pospres_,
+			d_velrhop_,
+			d_particle_type_,
+			numParticles_,
+			h_numGridCells_);
+
+		// prepare variables for interaction
+		// zero accel arrays, get pressures, etc.
+		// prepare data for interactions
+		gpusph::pre_interaction(d_ace_drho_dt_,
+						d_sorted_velrhop_,
+						d_sorted_pospres_,
+						d_visc_dt_,
+						numParticles_);
+
+		// process particle interactions
+		gpusph::compute_interactions(d_ace_drho_dt_,
+							 d_sorted_velrhop_,
+							 d_sorted_pospres_,
+							 d_particle_index_,
+							 d_cell_start_,
+							 d_cell_end_,
+							 d_sorted_type_,
+							 d_visc_dt_,
+							 numParticles_,
+							 h_numGridCells_);
 //
 //		// get time step
 //		deltaTime = get_time_step(d_visc_dt_,numParticles_);
-//
-//		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
-//		zero_acceleration(d_ace_drho_dt_);
-//
-//		// zero out y-component of data for 2D simulations
-//		if(h_exec_params_.simulation_dimension == TWO_D) zero_ycomponent(d_ace_drho_dt_,numParticles_);
-//
-//		// predictor step
-//		predictorStep(
-//			d_pospres_,
-//			d_velrhop_,
-//			d_pospres_pre_,
-//			d_velrhop_pre_,
-//			deltaTime,
-//			numParticles_);
-//    }
-//
-//    {//============ Corrector Step =============
-//		// calculate grid hash
-//		calcHash(
-//			d_particle_hash_,
-//			d_particle_index_,
-//			d_pospres_pre_,
-//			numParticles_);
-//
-//		// sort particles based on hash
-//		sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
-//
-//		// reorder particle arrays into sorted order and
-//		// find start and end of each cell
-//		reorderDataAndFindCellStart(
-//			d_cell_start_,
-//			d_cell_end_,
-//			d_sorted_pospres_,
-//			d_sorted_velrhop_,
-//			d_sorted_type_,
-//			d_particle_hash_,
-//			d_particle_index_,
-//			d_pospres_pre_,
-//			d_velrhop_pre_,
-//			d_particle_type_,
-//			numParticles_,
-//			h_numGridCells_);
-//
-//		// prepare data for interactions
-//		pre_interaction(d_ace_drho_dt_,
-//						d_sorted_velrhop_,
-//						d_sorted_pospres_,
-//						d_visc_dt_,
-//						numParticles_);
-//
-//		// process particle interactions
-//		compute_interactions(d_ace_drho_dt_,
-//    						 d_sorted_velrhop_,
-//							 d_sorted_pospres_,
-//							 d_particle_index_,
-//							 d_cell_start_,
-//							 d_cell_end_,
-//							 d_sorted_type_,
-//							 d_visc_dt_,
-//							 numParticles_,
-//							 h_numGridCells_);
-//
-//		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
-//		zero_acceleration(d_ace_drho_dt_);
-//
-//		// zero out y-component of data for 2D simulations. still need to add C wrapper to this as well
-//		if(h_exec_params_.simulation_dimension == TWO_D) zero_ycomponent(d_ace_drho_dt_,numParticles_);
-//
-//		// corrector step
-//        correctorStep(
-//            d_pospres_,
-//            d_velrhop_,
-//            d_pospres_pre_,
-//            d_velrhop_pre_,
-//            deltaTime,
-//            numParticles_);
-//    }
+
+		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
+		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
+
+		// zero out y-component of data for 2D simulations
+		if(h_exec_params_.simulation_dimension == TWO_D) gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
+
+		// predictor step
+		gpusph::predictorStep(
+			d_pospres_,
+			d_velrhop_,
+			d_pospres_pre_,
+			d_velrhop_pre_,
+			d_ace_drho_dt_,
+			deltaTime,
+			numParticles_);
+    }
+
+    {//============ Corrector Step =============
+		// calculate grid hash
+		gpusph::calcHash(
+			d_particle_hash_,
+			d_particle_index_,
+			d_pospres_pre_,
+			numParticles_);
+
+		// sort particles based on hash
+		gpusph::sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
+
+		// reorder particle arrays into sorted order and
+		// find start and end of each cell
+		gpusph::reorderDataAndFindCellStart(
+			d_cell_start_,
+			d_cell_end_,
+			d_sorted_pospres_,
+			d_sorted_velrhop_,
+			d_sorted_type_,
+			d_particle_hash_,
+			d_particle_index_,
+			d_pospres_pre_,
+			d_velrhop_pre_,
+			d_particle_type_,
+			numParticles_,
+			h_numGridCells_);
+
+		// prepare data for interactions
+		gpusph::pre_interaction(d_ace_drho_dt_,
+						d_sorted_velrhop_,
+						d_sorted_pospres_,
+						d_visc_dt_,
+						numParticles_);
+
+		// process particle interactions
+		gpusph::compute_interactions(d_ace_drho_dt_,
+    						 d_sorted_velrhop_,
+							 d_sorted_pospres_,
+							 d_particle_index_,
+							 d_cell_start_,
+							 d_cell_end_,
+							 d_sorted_type_,
+							 d_visc_dt_,
+							 numParticles_,
+							 h_numGridCells_);
+
+		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
+		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
+
+		// zero out y-component of data for 2D simulations. still need to add C wrapper to this as well
+		if(h_exec_params_.simulation_dimension == TWO_D) gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
+
+		// corrector step
+        gpusph::correctorStep(
+            d_pospres_,
+            d_velrhop_,
+            d_pospres_pre_,
+            d_velrhop_pre_,
+            d_ace_drho_dt_,
+            deltaTime,
+            numParticles_);
+    }
 
     return deltaTime;
 
@@ -373,8 +374,8 @@ void
 ParticleSystem::dumpGrid()
 {
     // dump grid information
-    copyArrayFromDevice(h_cell_start_, d_cell_start_, 0, sizeof(uint)*h_numGridCells_);
-    copyArrayFromDevice(h_cell_end_, d_cell_end_, 0, sizeof(uint)*h_numGridCells_);
+	gpusph::copyArrayFromDevice(h_cell_start_, d_cell_start_, 0, sizeof(uint)*h_numGridCells_);
+	gpusph::copyArrayFromDevice(h_cell_end_, d_cell_end_, 0, sizeof(uint)*h_numGridCells_);
     uint maxCellSize = 0;
 
     for (uint i=0; i<h_numGridCells_; i++)
@@ -397,7 +398,7 @@ ParticleSystem::dumpGrid()
 void
 ParticleSystem::dumpParameters()
 {
-    printf("world origin = %3.2f x %3.2f x %3.2f \n",h_domain_params_.world_origin.x,h_domain_params_.worldOrigin.y,h_domain_params_.world_origin.z);
+    printf("world origin = %3.2f x %3.2f x %3.2f \n",h_domain_params_.world_origin.x,h_domain_params_.world_origin.y,h_domain_params_.world_origin.z);
     printf("world size = %3.2f x %3.2f x %3.2f \n",h_domain_params_.world_size.x,h_domain_params_.world_size.y,h_domain_params_.world_size.z);
     printf("Cell Size = %5.4f x %5.4f x %5.4f \n",h_domain_params_.cell_size.x, h_domain_params_.cell_size.y,h_domain_params_.cell_size.z);
     printf("Grid Size = %d x %d x %d \n",h_grid_size_.x, h_grid_size_.y,h_grid_size_.z);
@@ -411,12 +412,12 @@ ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
 	  pFile = fopen (fileName,"w");
 
     // debug
-    copyArrayFromDevice(h_pospres_, d_pospres_, 0, sizeof(Real)*4*count);
-    copyArrayFromDevice(h_velrhop_, d_velrhop_, 0, sizeof(Real)*4*count);
+	  gpusph::copyArrayFromDevice(h_pospres_, d_pospres_, 0, sizeof(Real)*4*count);
+	  gpusph::copyArrayFromDevice(h_velrhop_, d_velrhop_, 0, sizeof(Real)*4*count);
 
     for (uint i=start; i<start+count; i++)  {
         //        printf("%d: ", i);
-    	fprintf(pFile,"%10.9f, %10.9f, %10.9f\n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2]);
+    	fprintf(pFile,"%10.9e, %10.9e, %10.9e %10.9e, %10.9e, %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_velrhop_[i*4+0], h_velrhop_[i*4+1], h_velrhop_[i*4+2], h_velrhop_[i*4+3]);
 //        printf("pos: (%.4f, %.4f, %.4f, %.4f)\n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
 //        printf("vel: (%.4f, %.4f, %.4f, %.4f)\n", h_velrhop_[i*4+0], h_velrhop_[i*4+1], h_velrhop_[i*4+2], h_velrhop_[i*4+3]);
     }
@@ -482,7 +483,7 @@ inline Real frand()
 void
 ParticleSystem::load(std::string config)
 {
-	std::ifstream p_file(config);
+	std::ifstream p_file(config.c_str());
 
 	if(p_file.is_open())
 	{
@@ -506,33 +507,33 @@ ParticleSystem::load(std::string config)
 				h_particle_type_[i] = type_temp;
 			}
 
-		copyArrayToDevice(d_pospres_, h_pospres_, 0, numParticles_*4*sizeof(Real));
-		copyArrayToDevice(d_velrhop_, h_velrhop_, 0, numParticles_*4*sizeof(Real));
-		copyArrayToDevice(d_particle_type_, h_particle_type_, 0, numParticles_*sizeof(uint));
+		gpusph::copyArrayToDevice(d_pospres_, h_pospres_, 0, numParticles_*4*sizeof(Real));
+		gpusph::copyArrayToDevice(d_velrhop_, h_velrhop_, 0, numParticles_*4*sizeof(Real));
+		gpusph::copyArrayToDevice(d_particle_type_, h_particle_type_, 0, numParticles_*sizeof(uint));
 	}
 
-	else cout << "Unable to open file containing initial particle distribution";
+	else std::cout << "Unable to open file containing initial particle distribution";
 
 }
 
-Real
-ParticleSystem::get_time_step()
-{
-	cuda_vector_norm(d_ace_drho_dt_,d_norm_ace_);
-	Real max_acceleration = cuda_max(d_mod_ace_,numParticles_);
-	Real max_visc_dt = cuda_max(d_visc_dt_,numParticles_);
-	Real max_sound_speed = cuda_max();
-    Real smoothing_length = h_simulation_params_.smoothing_length;
-
-    //-dt1 depends on force per unit mass.
-	const Real dt1=(max_acceleration? (sqrt(smoothing_length)/sqrt(sqrt(max_acceleration))): FLT_MAX);
-
-	//-dt2 combines the Courant and the viscous time-step controls.
-    const Real dt2=(max_sound_speed||max_visc_dt? (smoothing_length/(max_sound_speed+smoothing_length*max_visc_dt)): FLT_MAX);
-
-    //-dt new value of time step.
-    Real dt=h_simulation_params_.cfl_number*min(dt1,dt2);
-    //if(DtFixed)dt=DtFixed->GetDt(TimeStep,dt);
-    //if(dt < dt_min){ dt = dt_min; }
-    return(dt);
-}
+//Real
+//ParticleSystem::get_time_step()
+//{
+//	cuda_vector_norm(d_ace_drho_dt_,d_norm_ace_);
+//	Real max_acceleration = cuda_max(d_mod_ace_,numParticles_);
+//	Real max_visc_dt = cuda_max(d_visc_dt_,numParticles_);
+//	Real max_sound_speed = cuda_max();
+//    Real smoothing_length = h_simulation_params_.smoothing_length;
+//
+//    //-dt1 depends on force per unit mass.
+//	const Real dt1=(max_acceleration? (sqrt(smoothing_length)/sqrt(sqrt(max_acceleration))): FLT_MAX);
+//
+//	//-dt2 combines the Courant and the viscous time-step controls.
+//    const Real dt2=(max_sound_speed||max_visc_dt? (smoothing_length/(max_sound_speed+smoothing_length*max_visc_dt)): FLT_MAX);
+//
+//    //-dt new value of time step.
+//    Real dt=h_simulation_params_.cfl_number*min(dt1,dt2);
+//    //if(DtFixed)dt=DtFixed->GetDt(TimeStep,dt);
+//    //if(dt < dt_min){ dt = dt_min; }
+//    return(dt);
+//}

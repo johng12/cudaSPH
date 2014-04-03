@@ -64,9 +64,6 @@ char        *g_refFile = NULL;
 
 const char *sSDKsample = "CUDA Particles Simulation";
 
-extern "C" void cudaInit(int argc, char **argv);
-extern "C" void cudaGLInit(int argc, char **argv);
-extern "C" void copyArrayFromDevice(void *host, const void *device, int size);
 
 // initialize particle system
 void initParticleSystem(int numParticles)
@@ -178,7 +175,7 @@ main(int argc, char **argv)
 
     if (g_refFile)
     {
-        cudaInit(argc, argv);
+        gpusph::cudaInit(argc, argv);
     }
     else
     {
