@@ -480,7 +480,7 @@ void zero_ycomponentD(Real4 *data, uint numParticles)
 
 	if (index >= numParticles) return;
 
-	// set acceleration of static boundary particles to zero.
+	// set acceleration of y-component to zero.
 	data[index].y = 0.0;
 }
 

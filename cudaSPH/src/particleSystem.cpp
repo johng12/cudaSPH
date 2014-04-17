@@ -74,28 +74,28 @@ ParticleSystem::ParticleSystem(uint numParticles) :
 	h_simulation_params_.num_fluid_particles = numParticles;
 	h_simulation_params_.num_boundary_particles = numParticles;
 	h_simulation_params_.gravity = make_Real3(0.0, 0.0, -9.81);
-	h_simulation_params_.smoothing_length = 1.0 / 64.0;
+	h_simulation_params_.smoothing_length = 2.7712812921E-02;
 	h_simulation_params_.over_smoothing_length = 1.0 / h_simulation_params_.smoothing_length;
 	h_simulation_params_.four_h_squared = 4.0 * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length;
 	h_simulation_params_.rhop0 = 1000.0;
 	h_simulation_params_.over_rhop0 = 1.0 / 1000.0;
-	h_simulation_params_.fluid_mass = 1.0;
-	h_simulation_params_.boundary_mass = 1.0;
+	h_simulation_params_.fluid_mass = 8.0000000000E-03;
+	h_simulation_params_.boundary_mass = 8.0000000000E-03;
 	h_simulation_params_.cs0 = 1.0;
 	h_simulation_params_.wendland_a1 = 1.0;
 	h_simulation_params_.wendland_a2 = 1.0;
 	h_simulation_params_.epsilon = 1e-3;
 	h_simulation_params_.nu = 1e-3;
 	h_simulation_params_.gamma = 7.0;
-	h_simulation_params_.b_coeff = 1.0;
+	h_simulation_params_.b_coeff = 4.4845714286E+04;
 	h_simulation_params_.cfl_number = 0.3;
 
 	// set domain parameters
 	h_domain_params_.world_origin = make_Real3(-1.0, -1.0, -1.0);
     h_domain_params_.world_size = make_Real3(2.0, 2.0, 2.0);
-    Real3 domainMin = h_domain_params_.world_origin - 2.0 * h_simulation_params_.smoothing_length;
+    Real3 domainMin = h_domain_params_.world_origin - 0.1 * h_simulation_params_.smoothing_length;
     h_domain_params_.world_origin = domainMin;
-	Real3 domainMax = domainMin + h_domain_params_.world_size + 2.0 * h_simulation_params_.smoothing_length;
+	Real3 domainMax = domainMin + h_domain_params_.world_size + 0.1 * h_simulation_params_.smoothing_length;
     Real cellSize = 2.0 * h_simulation_params_.smoothing_length;  // cell size equal to 2*particle smoothing length
 	h_domain_params_.cell_size = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
 

@@ -64,13 +64,12 @@ char        *g_refFile = NULL;
 
 const char *sSDKsample = "CUDA Particles Simulation";
 
-
 // initialize particle system
 void initParticleSystem(int numParticles)
 {
     psystem = new ParticleSystem(numParticles);
-//    psystem->reset(ParticleSystem::CONFIG_GRID);
-
+    psystem->load("Fluid.asc");
+    psystem->dumpParticles(0,psystem->getNumParticles(),"PART_0000.dat");
     sdkCreateTimer(&timer);
 }
 
@@ -199,7 +198,7 @@ main(int argc, char **argv)
             numIterations = 300;
         }
 
-        runBenchmark(numIterations, argv[0]);
+//        runBenchmark(numIterations, argv[0]);
     }
 
     if (psystem)
