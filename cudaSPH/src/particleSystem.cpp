@@ -103,9 +103,9 @@ ParticleSystem::ParticleSystem(uint numParticles):
     Real cellSize = 2.0 * h_simulation_params_.smoothing_length;  // cell size equal to 2*particle smoothing length
 	h_domain_params_.cell_size = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
 
-	h_grid_size_.x = floor((domainMax.x - domainMin.x)/h_domain_params_.cell_size.x) + 1;
-	h_grid_size_.y = floor((domainMax.y - domainMin.y)/h_domain_params_.cell_size.y) + 1;
-	h_grid_size_.z = floor((domainMax.z - domainMin.z)/h_domain_params_.cell_size.z) + 1;
+	h_grid_size_.x = floor((domainMax.x - domainMin.x)/h_domain_params_.cell_size.x);
+	h_grid_size_.y = floor((domainMax.y - domainMin.y)/h_domain_params_.cell_size.y);
+	h_grid_size_.z = floor((domainMax.z - domainMin.z)/h_domain_params_.cell_size.z);
 
 
     h_numGridCells_ = h_grid_size_.x*h_grid_size_.y*h_grid_size_.z;
@@ -238,14 +238,13 @@ ParticleSystem::update(Real deltaTime)
     gpusph::set_domain_parameters(&h_domain_params_);
 	gpusph::set_sim_parameters(&h_simulation_params_);
     gpusph::set_exec_parameters(&h_exec_params_);
-    gpusph::threadSync();
 
     {//======== Predictor Step =============
 		// calculate grid hash
 		gpusph::calcHash(
 			d_particle_hash_,
 			d_particle_index_,
-			d_pospres_pre_,
+			d_pospres_,
 			numParticles_);
 
 		// sort particles based on hash
@@ -276,15 +275,6 @@ ParticleSystem::update(Real deltaTime)
 						d_visc_dt_,
 						numParticles_);
 
-		gpusph::copyArrayFromDevice(h_particle_type_, d_sorted_type_, 0, sizeof(uint)*numParticles_);
-		FILE * pFile;
-		pFile = fopen ("pre_accelerations.dat","w");
-		for (uint i=0; i<numParticles_; i++)
-		{
-			fprintf(pFile,"%d \n", h_particle_type_[i]);
-		}
-		fclose(pFile);
-
 		// process particle interactions
 		gpusph::compute_interactions(d_ace_drho_dt_,
 							 d_sorted_velrhop_,
@@ -300,27 +290,28 @@ ParticleSystem::update(Real deltaTime)
 //		// get time step
 //		deltaTime = get_time_step(d_visc_dt_,numParticles_);
 
-		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
-
-		pFile = fopen ("accelerations.dat","w");
-		for (uint i=0; i<numParticles_; i++)
-		{
-			fprintf(pFile,"%10.9e %10.9e %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
-		}
-		fclose(pFile);
+//		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
+//
+//		pFile = fopen ("accelerations.dat","w");
+//		for (uint i=0; i<numParticles_; i++)
+//		{
+//			fprintf(pFile,"%10.9e %10.9e %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
+//		}
+//		fclose(pFile);
 
 
 		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
 		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
 
-		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
+//		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
+//
+//		pFile = fopen ("post_accelerations.dat","w");
+//		for (uint i=0; i<numParticles_; i++)
+//		{
+//			fprintf(pFile,"%10.9e %10.9e %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
+//		}
+//		fclose(pFile);
 
-		pFile = fopen ("post_accelerations.dat","w");
-		for (uint i=0; i<numParticles_; i++)
-		{
-			fprintf(pFile,"%10.9e %10.9e %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
-		}
-		fclose(pFile);
 		// zero out y-component of data for 2D simulations
 		if(h_exec_params_.simulation_dimension == TWO_D) gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
 
@@ -345,9 +336,6 @@ ParticleSystem::update(Real deltaTime)
 
 		// sort particles based on hash
 		gpusph::sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
-
-		printf("Grid Size = %d x %d x %d \n",h_grid_size_.x, h_grid_size_.y,h_grid_size_.z);
-		printf("Total Cells = %d \n",h_domain_params_.num_cells);
 
 		// reorder particle arrays into sorted order and
 		// find start and end of each cell

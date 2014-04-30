@@ -83,7 +83,7 @@ void runBenchmark(int iterations, char *exec_path)
     printf("Run %u particles simulation for %d iterations...\n\n", numParticles, iterations);
     cudaDeviceSynchronize();
     sdkStartTimer(&timer);
-    int printStep = 500;
+    int printStep = 10000;
 
     char buffer[32]; // The filename buffer.
 
@@ -97,7 +97,7 @@ void runBenchmark(int iterations, char *exec_path)
         	snprintf(buffer, sizeof(char) * 32, "PART%i.dat", i);
         	psystem->dumpParticles(0,psystem->getNumParticles(),buffer);
         }
-
+        printf("%d \n",i);
     }
 
     cudaDeviceSynchronize();
@@ -195,7 +195,7 @@ main(int argc, char **argv)
     {
         if (numIterations <= 0)
         {
-            numIterations = 1;
+            numIterations = 100000;
         }
 
         runBenchmark(numIterations, argv[0]);
