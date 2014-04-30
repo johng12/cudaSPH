@@ -42,7 +42,7 @@ class ParticleSystem
         Real3 getWorldOrigin() {return h_domain_params_.world_origin;}
         Real3 getCellSize() {return h_domain_params_.cell_size;}
         uint3 getGridSize() const {return h_domain_params_.grid_size;}
-        Real get_time_step();
+//        Real get_time_step();
 
     protected: // methods
         ParticleSystem() {}

@@ -38,16 +38,16 @@
 #define MAX_EPSILON_ERROR 5.00
 #define THRESHOLD         0.30
 
-#define NUM_PARTICLES   16000
+#define NUM_PARTICLES   43324
 
 uint numParticles = 0;
-int numIterations = 0; // run until exit
+int numIterations = 1; // run until exit
 
 // simulation parameters
-Real timestep = 0.5;
+Real timestep = 1e-6;
 Real damping = 1.0;
 Real gravity = 0.0003;
-int iterations = 1;
+int iterations = 3;
 int ballr = 10;
 
 Real collideSpring = 0.5;
@@ -83,7 +83,7 @@ void runBenchmark(int iterations, char *exec_path)
     printf("Run %u particles simulation for %d iterations...\n\n", numParticles, iterations);
     cudaDeviceSynchronize();
     sdkStartTimer(&timer);
-    int printStep = 100;
+    int printStep = 500;
 
     char buffer[32]; // The filename buffer.
 
@@ -195,10 +195,10 @@ main(int argc, char **argv)
     {
         if (numIterations <= 0)
         {
-            numIterations = 300;
+            numIterations = 1;
         }
 
-//        runBenchmark(numIterations, argv[0]);
+        runBenchmark(numIterations, argv[0]);
     }
 
     if (psystem)

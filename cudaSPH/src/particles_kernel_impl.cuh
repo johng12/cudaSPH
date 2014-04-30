@@ -279,7 +279,7 @@ void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 
 		{// Acceleration
 			const Real p_vpm = -prs * massp2;
-			acep1.x += p_vpm * frx; acep1.y = p_vpm * fry; acep1.z = p_vpm * frz;
+			acep1.x += p_vpm * frx; acep1.y += p_vpm * fry; acep1.z += p_vpm * frz;
 		}
 
 		{// Density Derivative
@@ -354,7 +354,7 @@ void interact_with_cell(int3 gridPos, //
 				Real4 velrhop2 = FETCH(velrhop,j);
 				Real massp2;
 				uint type2 = FETCH(type,j);
-//				uint FLUID = 1;
+
 				if(type2 == FLUID)
 				{
 					massp2 = sim_params.fluid_mass;
@@ -394,7 +394,7 @@ void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration an
     // read particle data from sorted arrays
     Real4 pospres1 = FETCH(pospres,index);
     Real4 velrhop1 = FETCH(velrhop,index);
-    uint FLUID = 1;
+
     Real massp1 = (FETCH(type,index)=FLUID? sim_params.fluid_mass: sim_params.boundary_mass);
     Real  visc = viscdt[index]; // Holds max dt value based on viscous considerations
 
