@@ -29,9 +29,9 @@ class ParticleSystem
 
         Real update(Real deltaTime); // Integrates particle system in time
         void load(std::string config); // Loads initial particle distribution from input file
-
+        void apply_shepard_filter(); // Applies Sheppard density filter
         void dumpGrid(); // Prints out grid info
-        void dumpParticles(uint start, uint count, const char *fileName); // Prints particle positions to a file
+        void dumpParticles(uint start, uint count, Real current_time, const char *fileName); // Prints particle positions to a file
         void dumpParameters();
 
         void setGravity(Real3 x) {h_simulation_params_.gravity = x;}
@@ -64,8 +64,10 @@ class ParticleSystem
         // CPU grid sort data - used for dumping grid info to file
         uint  *h_particle_hash_; // bin number that particle is located in for grid search
         uint  *h_particle_index_; // unique particle identifier. constant throughout simulation
+        int  *h_particle_gridPos_; // grid cell location of particle (x,y,z)
         uint  *h_cell_start_; // sorted index of first particle in a given grid cell
         uint  *h_cell_end_; // sorted index of last particle in a given grid cell
+        uint  *h_neighbors_;
 
         // GPU particle data
         Real *d_pospres_; // particle positions and pressures (x,y,z,P)
@@ -91,9 +93,10 @@ class ParticleSystem
         // grid data for sorting method
         uint  *d_particle_hash_; // grid hash value for each particle
         uint  *d_particle_index_;// particle index for each particle
+        int  *d_particle_gridPos_; // particle grid cell location
         uint  *d_cell_start_;        // index of start of each cell in sorted list
         uint  *d_cell_end_;          // index of end of cell
-
+        uint  *d_neighbors_;
         // parameters for simulation, neighbor search, and execution
         simulation_parameters h_simulation_params_;
         domain_parameters h_domain_params_;

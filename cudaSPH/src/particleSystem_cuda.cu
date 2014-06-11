@@ -17,7 +17,6 @@
 #include <string.h>
 
 #include <cuda_runtime.h>
-
 #include <helper_cuda.h>
 #include <helper_cuda_gl.h>
 #include <math.h>
@@ -86,7 +85,6 @@ namespace gpusph
 
     void set_sim_parameters(simulation_parameters *hostParams)
     {
-
         // copy parameters to constant memory
         checkCudaErrors(cudaMemcpyToSymbol(sim_params, hostParams, sizeof(simulation_parameters)));
     }
@@ -161,7 +159,8 @@ namespace gpusph
     void calcHash(uint  *gridParticleHash,
                   uint  *gridParticleIndex,
                   Real *pos,
-                  int    numParticles)
+                  int    numParticles,
+                  int   *gridParticlePos)
     {
         uint numThreads, numBlocks;
         computeGridSize(numParticles, 256, numBlocks, numThreads);
@@ -170,7 +169,8 @@ namespace gpusph
         calcHashD<<< numBlocks, numThreads >>>(gridParticleHash,
                                                gridParticleIndex,
                                                (Real4 *) pos,
-                                               numParticles);
+                                               numParticles,
+                                               (int4 *) gridParticlePos);
 
         // check if kernel invocation generated an error
         getLastCudaError("Kernel execution failed");
@@ -251,7 +251,8 @@ namespace gpusph
                  uint   *sorted_type,
                  Real  *viscdt,
                  uint   numParticles,
-                 uint   numCells)
+                 uint   numCells,
+                 uint  *neighbors)
     {
 #if USE_TEX
         checkCudaErrors(cudaBindTexture(0, oldPosTex, sorted_pospres, numParticles*sizeof(Real4)));
@@ -262,7 +263,7 @@ namespace gpusph
 
         // thread per particle
         uint numThreads, numBlocks;
-        computeGridSize(numParticles, 64, numBlocks, numThreads);
+        computeGridSize(numParticles, 256, numBlocks, numThreads);
 
         // execute the kernel
         compute_particle_interactions<<< numBlocks, numThreads >>>((Real4 *) ace_drhodt,
@@ -273,7 +274,8 @@ namespace gpusph
 																   cellEnd,
 																   sorted_type,
 																   viscdt,
-																   numParticles);
+																   numParticles,
+																   neighbors);
 
         // check if kernel invocation generated an error
         getLastCudaError("Kernel execution failed");
@@ -328,16 +330,17 @@ namespace gpusph
         gridPos.x = floor((p.x - domain_params.world_origin.x) / domain_params.cell_size.x);
         gridPos.y = floor((p.y - domain_params.world_origin.y) / domain_params.cell_size.y);
         gridPos.z = floor((p.z - domain_params.world_origin.z) / domain_params.cell_size.z);
+        if(gridPos.x >= domain_params.grid_size.x) gridPos.x = domain_params.grid_size.x - 1;
+        if(gridPos.y >= domain_params.grid_size.y) gridPos.y = domain_params.grid_size.y - 1;
+        if(gridPos.z >= domain_params.grid_size.z) gridPos.z = domain_params.grid_size.z - 1;
         return gridPos;
     }
 
     // calculate address in grid from position (clamping to edges)
     __device__ uint calcGridHash(int3 gridPos)
     {
-    //    gridPos.x = gridPos.x & (params.gridSize.x-1);  // wrap grid, assumes size is power of 2
-    //    gridPos.y = gridPos.y & (params.gridSize.y-1);
-    //    gridPos.z = gridPos.z & (params.gridSize.z-1);
-        return __umul24(__umul24(gridPos.z, domain_params.grid_size.y), domain_params.grid_size.x) + __umul24(gridPos.y, domain_params.grid_size.x) + gridPos.x;
+
+    	return gridPos.z*domain_params.grid_size.y*domain_params.grid_size.x + gridPos.y*domain_params.grid_size.x + gridPos.x;
     }
 
     // calculate grid hash value for each particle
@@ -345,7 +348,8 @@ namespace gpusph
     void calcHashD(uint   *gridParticleHash,  // output
                    uint   *gridParticleIndex, // output
                    Real4 *pos,               // input: positions
-                   uint    numParticles)
+                   uint    numParticles,
+                   int4	  *gridParticlePos)
     {
         uint index = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
 
@@ -355,11 +359,13 @@ namespace gpusph
 
         // get address in grid
         int3 gridPos = calcGridPos(make_Real3(p.x, p.y, p.z));
-        uint hash = calcGridHash(gridPos);
 
+        uint hash = calcGridHash(gridPos);
+        //printf("%d %d %d %d %d %d %d \n",gridPos.x,gridPos.y,gridPos.z,domain_params.grid_size.x,domain_params.grid_size.y,domain_params.grid_size.z,hash);
         // store grid hash and particle index
         gridParticleHash[index] = hash;
         gridParticleIndex[index] = index;
+        gridParticlePos[index].x = gridPos.x; gridParticlePos[index].y = gridPos.y; gridParticlePos[index].z = gridPos.z;
     }
 
     // rearrange particle data into sorted order, and find the start of each cell
@@ -439,8 +445,9 @@ namespace gpusph
     __device__
     void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
     								   Real4 pospres2, Real4 velrhop2, Real massp2,
-    								   Real3 acep1, Real arp1, Real visc)
+    								   Real3 &acep1, Real &arp1, Real &visc, uint &neigh1)
     {
+
     	Real drx = pospres1.x - pospres2.x;
     	Real dry = pospres1.y - pospres2.y;
     	Real drz = pospres1.z - pospres2.z;
@@ -449,6 +456,8 @@ namespace gpusph
 
     	if(rr2<=sim_params.four_h_squared && rr2 >=1e-18)
     	{
+    		//Add to particle neighbor count
+    		neigh1 += 1;
     		const Real prrhop2 = pospres2.w/(velrhop2.w * velrhop2.w);
     		const Real prrhop1 = pospres1.w/(velrhop1.w * velrhop1.w);
     		Real prs = prrhop1 + prrhop2;
@@ -523,19 +532,24 @@ namespace gpusph
     						Real4 *pospres, // Ordered position and pressure data for all particles
     						Real4 *velrhop, // Ordered velocity and density data for all particles
     						Real4 *ace_drhodt, // Need to fix this term
-    						Real3 acep1, // Acceleration accumulator for particle i
-    						Real arp1, // Density derivative accumulator for particle i
-    						Real  visc, // Max dt for particle i based on viscous considerations
+    						Real3 &acep1, // Acceleration accumulator for particle i
+    						Real &arp1, // Density derivative accumulator for particle i
+    						Real  &visc, // Max dt for particle i based on viscous considerations
     						uint *cellStart, // Index of 1st particle in each grid cell
-    						uint *cellEnd) // Index of last particle in each grid cell
+    						uint *cellEnd,
+    						uint &neigh1) // Index of last particle in each grid cell
     {
+
+
     	uint gridHash = calcGridHash(gridPos);
+    	Real massp2;
 
     	// get start of bucket for this cell
     	uint startIndex = FETCH(cellStart, gridHash);
 
     	if (startIndex != 0xffffffff)          // cell is not empty
     	{
+
     		// iterate over particles in this cell
     		uint endIndex = FETCH(cellEnd, gridHash);
 
@@ -543,9 +557,10 @@ namespace gpusph
     		{
     			if (j != index)                // check not interacting with self
     			{
+
     				Real4 pospres2 = FETCH(pospres,j);
     				Real4 velrhop2 = FETCH(velrhop,j);
-    				Real massp2;
+
     				uint type2 = FETCH(type,j);
 
     				if(type2 == FLUID)
@@ -557,13 +572,17 @@ namespace gpusph
     					massp2 = sim_params.boundary_mass;
     				}
 
+    				massp2 = sim_params.fluid_mass;
+
     				// collide two particles
     				particle_particle_interaction(pospres1, velrhop1, massp1,
     											  pospres2, velrhop2, massp2,
-    											  acep1, arp1, visc);
+    											  acep1, arp1, visc,neigh1);
+
 
     			}
     		}
+
     	}
 
     }
@@ -577,18 +596,31 @@ namespace gpusph
     								   uint *cellEnd,
     								   uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
     								   Real *viscdt, // output: max time step for adaptive time stepping
-    								   uint numParticles)
+    								   uint numParticles,
+    								   uint *neighbors)
 
     {
         uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
 
-        if (index >= numParticles) return;
+        if (index < numParticles)
+        {
 
         // read particle data from sorted arrays
         Real4 pospres1 = FETCH(pospres,index);
         Real4 velrhop1 = FETCH(velrhop,index);
         Real4 ace_drhodt1 = FETCH(ace_drhodt,index); // *This is not sorted, need to work this out.
-        Real massp1 = (FETCH(type,index)=FLUID? sim_params.fluid_mass: sim_params.boundary_mass);
+        Real massp1;
+
+        if (FETCH(type,index) == FLUID)
+        {
+        	massp1 = sim_params.fluid_mass;
+
+        }
+        else
+        {
+        	massp1 = sim_params.boundary_mass;
+        }
+
         Real  visc = viscdt[index]; // Holds max dt value based on viscous considerations
 
         // get address in grid
@@ -598,6 +630,7 @@ namespace gpusph
         // examine neighboring cells
         Real3 acep1 = make_Real3(ace_drhodt1); // Acceleration accumulator for particle(index)
         Real  arp1 = 0.0; // drho_dt accumulator for particle(index)
+        uint  neigh1 = 0; // neighbor accumulator
 
         for (int z=-1; z<=1; z++)
         {
@@ -610,7 +643,8 @@ namespace gpusph
                     // Check to see if cell exists
                     if(cellExists(neighbourPos))
                     {
-                    	interact_with_cell(gridPos,
+
+                    	interact_with_cell(neighbourPos,
                     					   index,
                     					   massp1,
                     					   type,
@@ -623,16 +657,20 @@ namespace gpusph
                     					   arp1,
                     					   visc,
                     					   cellStart,
-                    					   cellEnd);
+                    					   cellEnd,
+                    					   neigh1);
+
                     }
                 }
             }
         }
 
-        // write new velocity back to original unsorted location
+        // write accelerations back to original unsorted location
         uint originalIndex = gridParticleIndex[index];
         ace_drhodt[originalIndex] = make_Real4(acep1,arp1);
         viscdt[index] = visc;
+        neighbors[originalIndex] = neigh1;
+    }
     }
 
     __global__
@@ -682,14 +720,146 @@ namespace gpusph
     int cellExists(int3 gridPos)
     {
     	// Checks grid position against grid limits
-    	if( (gridPos.x >= 0) && (gridPos.x <= domain_params.grid_size.x - 1) && (gridPos.y >= 0) && (gridPos.y <= domain_params.grid_size.y - 1)
-    			&& (gridPos.z >= 0) && (gridPos.z <= domain_params.grid_size.z - 1))
+    	if( (gridPos.x >= 0) && (gridPos.x < domain_params.grid_size.x) && (gridPos.y >= 0) && (gridPos.y < domain_params.grid_size.y)
+    			&& (gridPos.z >= 0) && (gridPos.z < domain_params.grid_size.z))
     	{
     		return 1;
     	}
     	else
     	{
     		return 0;
+    	}
+
+    }
+
+    __global__
+     void sheppard_density_filterD(Real4 *velrhop, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+     								   Real4 *sorted_velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
+     								   Real4 *sorted_pospres, // input: sorted particle positions and pressures
+     								   uint *gridParticleIndex, // input: sorted particle indicies
+     								   uint *cellStart,
+     								   uint *cellEnd,
+     								   uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
+     								   uint numParticles)
+
+     {
+         uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
+
+         if (index < numParticles)
+         {
+
+         // read particle data from sorted arrays
+         Real4 pospres1 = FETCH(sorted_pospres,index);
+         Real4 velrhop1 = FETCH(sorted_velrhop,index);
+         Real rhop1 = velrhop1.w;
+
+         // get address in grid
+         Real3 pos = make_Real3(pospres1.x,pospres1.y,pospres1.z);
+         int3 gridPos = calcGridPos(pos);
+
+         // examine neighboring cells
+         Real sum_W = 0.0; // Acceleration accumulator for sum(W_ij)
+         Real  sum_mass_W = 0.0; // Accumulator for sum(mass*W_ij)
+
+         for (int z=-1; z<=1; z++)
+         {
+             for (int y=-1; y<=1; y++)
+             {
+                 for (int x=-1; x<=1; x++)
+                 {
+                     int3 neighbourPos = gridPos + make_int3(x, y, z);
+
+                     // Check to see if cell exists
+                     if(cellExists(neighbourPos))
+                     {
+
+                     	sheppard_interact_with_cell(neighbourPos,
+                     					   index,
+                     					   type,
+                     					   pospres1,
+                     					   velrhop1,
+                     					   sorted_pospres,
+                     					   sorted_velrhop,
+                     					   sum_W,
+                     					   sum_mass_W,
+                     					   cellStart,
+                     					   cellEnd);
+
+                     }
+                 }
+             }
+         }
+
+         // write accelerations back to original unsorted location
+         uint originalIndex = gridParticleIndex[index];
+         velrhop[originalIndex].w = sum_mass_W/sum_W;
+     }
+     }
+
+    __device__
+    void sheppard_interact_with_cell(int3 gridPos, //
+    						uint index, // index of particle i
+    						uint   *type, // Ordered particle type data for all particles
+    						Real4 pospres1, // position vector and pressure of particle i
+    						Real4 velrhop1, // velocity and density of particle i
+    						Real4 *pospres, // Ordered position and pressure data for all particles
+    						Real4 *velrhop, // Ordered velocity and density data for all particles
+    						Real &sum_W, // Acceleration accumulator for particle i
+    						Real &sum_mass_W, // Density derivative accumulator for particle i
+    						uint *cellStart, // Index of 1st particle in each grid cell
+    						uint *cellEnd) // Index of last particle in each grid cell
+    {
+
+
+    	uint gridHash = calcGridHash(gridPos);
+    	Real massp2;
+
+    	// get start of bucket for this cell
+    	uint startIndex = FETCH(cellStart, gridHash);
+
+    	if (startIndex != 0xffffffff)          // cell is not empty
+    	{
+
+    		// iterate over particles in this cell
+    		uint endIndex = FETCH(cellEnd, gridHash);
+
+    		for (uint j=startIndex; j<endIndex; j++)
+    		{
+    			if (j != index)                // check not interacting with self
+    			{
+
+    				Real4 pospres2 = FETCH(pospres,j);
+    				Real4 velrhop2 = FETCH(velrhop,j);
+
+    				uint type2 = FETCH(type,j);
+
+    				if(type2 == FLUID)
+    				{
+    					massp2 = sim_params.fluid_mass;
+    				}
+    				else
+    				{
+    					massp2 = sim_params.boundary_mass;
+    				}
+
+    				massp2 = sim_params.fluid_mass;
+
+    				// collide two particles
+    			   	Real drx = pospres1.x - pospres2.x;
+					Real dry = pospres1.y - pospres2.y;
+					Real drz = pospres1.z - pospres2.z;
+					const Real dvx = velrhop1.x - velrhop2.x, dvy =  velrhop1.y - velrhop2.y, dvz =  velrhop1.z - velrhop2.z;
+					Real rr2 = drx*drx + dry*dry + drz*drz;
+
+					if(rr2<=sim_params.four_h_squared && rr2 >=1e-18)
+					{
+						sum_W +=
+					}
+
+
+    			}
+    		}
+
     	}
 
     }

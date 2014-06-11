@@ -214,7 +214,9 @@ namespace gpusph
 	void calcHash(uint  *gridParticleHash,
 	                  uint  *gridParticleIndex,
 	                  Real *pos,
-	                  int    numParticles);
+	                  int    numParticles,
+	                  int *gridParticlePos);
+
 	void reorderDataAndFindCellStart(uint  *cellStart,
 	                                     uint  *cellEnd,
 	                                     Real *sortedPos,
@@ -241,10 +243,20 @@ namespace gpusph
 	                 uint   *sorted_type,
 	                 Real  *viscdt,
 	                 uint   numParticles,
-	                 uint   numCells);
+	                 uint   numCells,
+	                 uint  *neighbors);
 	void sortParticles(uint *dGridParticleHash, uint *dGridParticleIndex, uint numParticles);
 	void zero_acceleration(Real *ace_drhodt, uint numParticles);
 	void zero_ycomponent(Real *data, uint numParticles);
+	void sheppard_density_filter(Real4 *velrhop,
+								 Real4 *sorted_velrhop,
+								 Real4 *sorted_pospres,
+								 uint *gridParticleIndex, // input: sorted particle indicies
+								 uint *cellStart,
+								 uint *cellEnd,
+								 uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
+								 uint numParticles);
+
 	Real cuda_max(Real *data, uint numElements);
 
 	__device__ int cellExists(int3 cellPos);
@@ -254,7 +266,8 @@ namespace gpusph
 	void calcHashD(uint   *gridParticleHash,  // output
 	               uint   *gridParticleIndex, // output
 	               Real4 *pos,               // input: positions
-	               uint    numParticles);
+	               uint    numParticles,
+	               int4   *gridParticlePos);
 	__global__
 	void reorderDataAndFindCellStartD(uint   *cellStart,        // output: cell start index
 	                                  uint   *cellEnd,          // output: cell end index
@@ -270,7 +283,7 @@ namespace gpusph
 	__device__
 	void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 									   Real4 pospres2, Real4 velrhop2, Real massp2,
-									   Real3 acep1, Real arp1, Real visc);
+									   Real3 &acep1, Real &arp1, Real &visc, uint &neigh1);
 	__device__
 	void interact_with_cell(int3 gridPos, //
 							uint index, // index of particle i
@@ -280,11 +293,12 @@ namespace gpusph
 							Real4 velrhop1, // velocity and density of particle i
 							Real4 *pospres, // Ordered position and pressure data for all particles
 							Real4 *velrhop, // Ordered velocity and density data for all particles
-							Real3 acep1, // Acceleration accumulator for particle i
-							Real arp1, // Density derivative accumulator for particle i
-							Real  visc, // Max dt for particle i based on viscous considerations
+							Real3 &acep1, // Acceleration accumulator for particle i
+							Real &arp1, // Density derivative accumulator for particle i
+							Real  &visc, // Max dt for particle i based on viscous considerations
 							uint *cellStart, // Index of 1st particle in each grid cell
-							uint *cellEnd); // Index of last particle in each grid cell
+							uint *cellEnd,
+							uint &neigh1); // Index of last particle in each grid cell
 	__global__
 	void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
 									   Real4 *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
@@ -294,7 +308,8 @@ namespace gpusph
 									   uint *cellEnd,
 									   uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
 									   Real *viscdt, // output: max time step for adaptive time stepping
-									   uint numParticles);
+									   uint numParticles,
+									   uint *neighbors);
 	__global__
 	void pre_interactionD(Real4 *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
 					   Real4 *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
@@ -303,6 +318,16 @@ namespace gpusph
 					   uint numParticles);
 	__global__ void zero_accelerationD(Real4 *ace_drhodt);
 	__global__ void zero_ycomponentD(Real4 *data, uint numParticles);
+	__global__
+	void sheppard_density_filterD(Real4 *velrhop,
+								 Real4 *sorted_velrhop,
+								 Real4 *sorted_pospres,
+								 uint *gridParticleIndex, // input: sorted particle indicies
+								 uint *cellStart,
+								 uint *cellEnd,
+								 uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
+								 uint numParticles);
+
 
 
 }

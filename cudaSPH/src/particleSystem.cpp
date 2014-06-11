@@ -40,6 +40,7 @@ ParticleSystem::ParticleSystem(uint numParticles):
     h_particle_type_(0),
     h_particle_hash_(0),
     h_particle_index_(0),
+    h_particle_gridPos_(0),
     h_cell_start_(0),
     h_cell_end_(0),
 
@@ -63,37 +64,38 @@ ParticleSystem::ParticleSystem(uint numParticles):
 
 	d_particle_hash_(0),
 	d_particle_index_(0),
+	d_particle_gridPos_(0),
 	d_cell_start_(0),
 	d_cell_end_(0),
 
     m_timer(NULL)
 {
 	// set simulation parameters
-	h_simulation_params_.num_particles = numParticles;
-	h_simulation_params_.num_boundary_particles = 15002;
-	h_simulation_params_.num_fluid_particles = numParticles - h_simulation_params_.num_boundary_particles;
+	h_simulation_params_.num_particles = 5281;
+	h_simulation_params_.num_boundary_particles = 481;
+	h_simulation_params_.num_fluid_particles = 4800;
 
 	h_simulation_params_.gravity = make_Real3(0.0, 0.0, -9.81);
-	h_simulation_params_.smoothing_length = 2.7712812921E-02;
+	h_simulation_params_.smoothing_length = 6.1237215018E-03;
 	h_simulation_params_.over_smoothing_length = 1.0 / h_simulation_params_.smoothing_length;
 	h_simulation_params_.four_h_squared = 4.0 * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length;
 	h_simulation_params_.rhop0 = 1000.0;
 	h_simulation_params_.over_rhop0 = 1.0 / 1000.0;
-	h_simulation_params_.fluid_mass = 8.0000000000E-03;
-	h_simulation_params_.boundary_mass = 8.0000000000E-03;
+	h_simulation_params_.fluid_mass = 2.5000000000E-02;
+	h_simulation_params_.boundary_mass = 2.5000000000E-02;
 
 	h_simulation_params_.wendland_a1 = 0.557/(h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
 	h_simulation_params_.wendland_a2 = -2.7852/(h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
 	h_simulation_params_.epsilon = 1e-3;
 	h_simulation_params_.nu = 1e-3;
 	h_simulation_params_.gamma = 7.0;
-	h_simulation_params_.b_coeff = 4.4845714286E+04;
+	h_simulation_params_.b_coeff = 1.6536857143E+05;
 	h_simulation_params_.cs0 = sqrt(h_simulation_params_.b_coeff * h_simulation_params_.gamma * h_simulation_params_.over_rhop0);
 	h_simulation_params_.cfl_number = 0.3;
 
 	// set domain parameters
-	h_domain_params_.world_origin = make_Real3(-0.5, -0.5, -0.5);
-    h_domain_params_.world_size = make_Real3(1.0, 1.0, 1.0);
+	h_domain_params_.world_origin = make_Real3(0.0, 0.0, 0.0);
+    h_domain_params_.world_size = make_Real3(1.6, 0.67, 0.4);
     Real3 domainMin = h_domain_params_.world_origin - 0.1 * h_simulation_params_.smoothing_length;
 	Real3 domainMax = h_domain_params_.world_origin + h_domain_params_.world_size + 0.1 * h_simulation_params_.smoothing_length;
 	h_domain_params_.world_origin = domainMin;
@@ -106,7 +108,9 @@ ParticleSystem::ParticleSystem(uint numParticles):
 	h_grid_size_.x = floor((domainMax.x - domainMin.x)/h_domain_params_.cell_size.x);
 	h_grid_size_.y = floor((domainMax.y - domainMin.y)/h_domain_params_.cell_size.y);
 	h_grid_size_.z = floor((domainMax.z - domainMin.z)/h_domain_params_.cell_size.z);
-
+	h_domain_params_.grid_size.x = h_grid_size_.x;
+	h_domain_params_.grid_size.y = h_grid_size_.y;
+	h_domain_params_.grid_size.z = h_grid_size_.z;
 
     h_numGridCells_ = h_grid_size_.x*h_grid_size_.y*h_grid_size_.z;
     h_domain_params_.num_cells = h_numGridCells_;
@@ -117,7 +121,7 @@ ParticleSystem::ParticleSystem(uint numParticles):
     h_exec_params_.periodic_in = NONE;
     h_exec_params_.print_interval = 1e-3;
     h_exec_params_.save_interval = 1e-3;
-    h_exec_params_.simulation_dimension = THREE_D;
+    h_exec_params_.simulation_dimension = TWO_D;
 
     _initialize(numParticles);
 
@@ -148,6 +152,9 @@ ParticleSystem::_initialize(int numParticles)
 	h_particle_hash_ = new uint[numParticles_];
 		memset(h_particle_hash_, 0, numParticles_*sizeof(uint));
 
+	h_particle_gridPos_ = new int[numParticles_*4];
+		memset(h_particle_gridPos_,0,numParticles_*4*sizeof(int));
+
 	h_particle_index_ = new uint[numParticles_];
 		memset(h_particle_index_, 0, numParticles_*sizeof(uint));
 
@@ -156,6 +163,9 @@ ParticleSystem::_initialize(int numParticles)
 
     h_cell_end_ = new uint[h_numGridCells_];
     	memset(h_cell_end_, 0, h_numGridCells_*sizeof(uint));
+
+	h_neighbors_ = new uint[numParticles_];
+		memset(h_neighbors_,0,numParticles*sizeof(uint));
 
     // allocate GPU data
     unsigned int memSize = sizeof(Real) * 4 * numParticles_;
@@ -180,9 +190,10 @@ ParticleSystem::_initialize(int numParticles)
 
 	gpusph::allocateArray((void **)&d_particle_hash_, numParticles_*sizeof(uint));
 	gpusph::allocateArray((void **)&d_particle_index_, numParticles_*sizeof(uint));
+	gpusph::allocateArray((void **)&d_particle_gridPos_,numParticles_*4*sizeof(int));
 	gpusph::allocateArray((void **)&d_cell_start_, h_numGridCells_*sizeof(uint));
 	gpusph::allocateArray((void **)&d_cell_end_, h_numGridCells_*sizeof(uint));
-
+	gpusph::allocateArray((void **)&d_neighbors_,sizeof(uint) * numParticles_);
     sdkCreateTimer(&m_timer);
 
     gpusph::set_domain_parameters(&h_domain_params_);
@@ -201,6 +212,7 @@ ParticleSystem::_finalize()
     delete [] h_velrhop_;
     delete [] h_particle_type_;
     delete [] h_particle_hash_;
+    delete [] h_particle_gridPos_;
     delete [] h_particle_index_;
     delete [] h_cell_start_;
     delete [] h_cell_end_;
@@ -224,8 +236,10 @@ ParticleSystem::_finalize()
 
     gpusph::freeArray(d_particle_hash_);
     gpusph::freeArray(d_particle_index_);
+    gpusph::freeArray(d_particle_gridPos_);
     gpusph::freeArray(d_cell_start_);
     gpusph::freeArray(d_cell_end_);
+    gpusph::freeArray(d_neighbors_);
 }
 
 // step the simulation and return the current time step
@@ -245,7 +259,18 @@ ParticleSystem::update(Real deltaTime)
 			d_particle_hash_,
 			d_particle_index_,
 			d_pospres_,
-			numParticles_);
+			numParticles_,
+			d_particle_gridPos_);
+
+//		gpusph::copyArrayFromDevice(h_particle_hash_,d_particle_hash_,0,sizeof(uint)*numParticles_);
+//		gpusph::copyArrayFromDevice(h_particle_gridPos_,d_particle_gridPos_,0,sizeof(int)*4*numParticles_);
+//		FILE *pFile;
+//		pFile = fopen ("hash_data.dat","w");
+//		for (uint i=0; i<numParticles_; i++)
+//		{
+//			fprintf(pFile,"%d %d %d %d\n", h_particle_gridPos_[i*4+0],h_particle_gridPos_[i*4+1],h_particle_gridPos_[i*4+2], h_particle_hash_[i]);
+//		}
+//		fclose(pFile);
 
 		// sort particles based on hash
 		gpusph::sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
@@ -266,6 +291,16 @@ ParticleSystem::update(Real deltaTime)
 			numParticles_,
 			h_numGridCells_);
 
+//		gpusph::copyArrayFromDevice(h_cell_start_, d_cell_start_, 0, sizeof(uint)*h_numGridCells_);
+//		gpusph::copyArrayFromDevice(h_cell_end_,d_cell_end_,0,sizeof(uint)*h_numGridCells_);
+//
+//		pFile = fopen ("cell_Data.dat","w");
+//		for (uint i=0; i<h_numGridCells_; i++)
+//		{
+//			fprintf(pFile,"%d %d\n", h_cell_start_[i],h_cell_end_[i]);
+//		}
+//		fclose(pFile);
+
 		// prepare variables for interaction
 		// zero accel arrays, get pressures, etc.
 		// prepare data for interactions
@@ -274,6 +309,7 @@ ParticleSystem::update(Real deltaTime)
 						d_sorted_pospres_,
 						d_visc_dt_,
 						numParticles_);
+
 
 		// process particle interactions
 		gpusph::compute_interactions(d_ace_drho_dt_,
@@ -285,35 +321,26 @@ ParticleSystem::update(Real deltaTime)
 							 d_sorted_type_,
 							 d_visc_dt_,
 							 numParticles_,
-							 h_numGridCells_);
+							 h_numGridCells_,
+							 d_neighbors_);
 //
 //		// get time step
 //		deltaTime = get_time_step(d_visc_dt_,numParticles_);
 
-//		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
-//
-//		pFile = fopen ("accelerations.dat","w");
-//		for (uint i=0; i<numParticles_; i++)
-//		{
-//			fprintf(pFile,"%10.9e %10.9e %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
-//		}
-//		fclose(pFile);
-
-
-		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
+		// zero out acceleration of stationary particles.
 		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
-
-//		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
-//
-//		pFile = fopen ("post_accelerations.dat","w");
-//		for (uint i=0; i<numParticles_; i++)
-//		{
-//			fprintf(pFile,"%10.9e %10.9e %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
-//		}
-//		fclose(pFile);
 
 		// zero out y-component of data for 2D simulations
 		if(h_exec_params_.simulation_dimension == TWO_D) gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
+
+//		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
+//		FILE *pFile;
+//		pFile = fopen ("ace_Data.dat","w");
+//		for (uint i=0; i<numParticles_; i++)
+//		{
+//			fprintf(pFile,"%10.9e %10.9e %10.9e %10.9e\n", h_pospres_[i*4+0],h_pospres_[i*4+1],h_pospres_[i*4+2],h_pospres_[i*4+3]);
+//		}
+//		fclose(pFile);
 
 		// predictor step
 		gpusph::predictorStep(
@@ -332,7 +359,8 @@ ParticleSystem::update(Real deltaTime)
 			d_particle_hash_,
 			d_particle_index_,
 			d_pospres_pre_,
-			numParticles_);
+			numParticles_,
+			d_particle_gridPos_);
 
 		// sort particles based on hash
 		gpusph::sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
@@ -371,7 +399,8 @@ ParticleSystem::update(Real deltaTime)
 							 d_sorted_type_,
 							 d_visc_dt_,
 							 numParticles_,
-							 h_numGridCells_);
+							 h_numGridCells_,
+							 d_neighbors_);
 
 		// zero out acceleration of stationary particles. still need to add C wrapper in particleSystem_cuda.cu for this
 		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
@@ -388,9 +417,72 @@ ParticleSystem::update(Real deltaTime)
             d_ace_drho_dt_,
             deltaTime,
             numParticles_);
+
+		// evaluate new pressures.
+		gpusph::pre_interaction(d_ace_drho_dt_,
+						d_velrhop_,
+						d_pospres_,
+						d_visc_dt_,
+						numParticles_);
     }
 
     return deltaTime;
+
+
+}
+
+void
+ParticleSystem::apply_shepard_filter()
+{
+	assert(initialized_);
+
+	// calculate grid hash
+	gpusph::calcHash(
+		d_particle_hash_,
+		d_particle_index_,
+		d_pospres_,
+		numParticles_,
+		d_particle_gridPos_);
+
+	// sort particles based on hash
+	gpusph::sortParticles(d_particle_hash_, d_particle_index_, numParticles_);
+
+	// reorder particle arrays into sorted order and
+	// find start and end of each cell
+	gpusph::reorderDataAndFindCellStart(
+		d_cell_start_,
+		d_cell_end_,
+		d_sorted_pospres_,
+		d_sorted_velrhop_,
+		d_sorted_type_,
+		d_particle_hash_,
+		d_particle_index_,
+		d_pospres_,
+		d_velrhop_,
+		d_particle_type_,
+		numParticles_,
+		h_numGridCells_);
+
+	// prepare variables for interaction
+	// zero accel arrays, get pressures, etc.
+	// prepare data for interactions
+	gpusph::pre_interaction(d_ace_drho_dt_,
+					d_sorted_velrhop_,
+					d_sorted_pospres_,
+					d_visc_dt_,
+					numParticles_);
+
+
+	// process particle interactions
+	gpusph::sheppard_density_filter(d_velrhop_,
+									d_sorted_velrhop_,
+									d_sorted_pospres_,
+									d_particle_index_,
+									d_cell_start_,
+									d_cell_end_,
+									d_sorted_type_,
+									numParticles_,
+									h_numGridCells_);
 
 }
 
@@ -430,21 +522,29 @@ ParticleSystem::dumpParameters()
 }
 
 void
-ParticleSystem::dumpParticles(uint start, uint count, const char *fileName)
+ParticleSystem::dumpParticles(uint start, uint count, Real current_time, const char *fileName)
 {
 	  FILE * pFile;
 	  pFile = fopen (fileName,"w");
+	  fprintf(pFile,"VARIABLES=X(m),Y(m),Z(m),U(m/s),V(m/s),W(m/s),Rho(kg/m3),P(Pa) \n");
+	  fprintf(pFile,"Zone T=\"BoundaryParticles\",DATAPACKING = POINT,SolutionTime = %10.9e, StrandID = 1 \n",current_time);
 
     // debug
 	  gpusph::copyArrayFromDevice(h_pospres_, d_pospres_, 0, sizeof(Real)*4*count);
 	  gpusph::copyArrayFromDevice(h_velrhop_, d_velrhop_, 0, sizeof(Real)*4*count);
 
-    for (uint i=start; i<start+count; i++)  {
-        //        printf("%d: ", i);
-    	fprintf(pFile,"%10.9e, %10.9e, %10.9e %10.9e, %10.9e, %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_velrhop_[i*4+0], h_velrhop_[i*4+1], h_velrhop_[i*4+2], h_velrhop_[i*4+3]);
-//        printf("pos: (%.4f, %.4f, %.4f, %.4f)\n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_pospres_[i*4+3]);
-//        printf("vel: (%.4f, %.4f, %.4f, %.4f)\n", h_velrhop_[i*4+0], h_velrhop_[i*4+1], h_velrhop_[i*4+2], h_velrhop_[i*4+3]);
+    for (uint i=0; i<h_simulation_params_.num_boundary_particles; i++)  {
+    	fprintf(pFile,"%10.9e, %10.9e, %10.9e %10.9e, %10.9e, %10.9e %10.9e %10.9e \n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_velrhop_[i*4+0], h_velrhop_[i*4+1], h_velrhop_[i*4+2], h_velrhop_[i*4+3], h_pospres_[i*4+3]);
+
     }
+
+	  fprintf(pFile,"VARIABLES=X(m),Y(m),Z(m),U(m/s),V(m/s),W(m/s),Rho(kg/m3),P(Pa) \n");
+	  fprintf(pFile,"Zone T=\"FluidParticles\",DATAPACKING = POINT,SolutionTime = %10.9e, StrandID = 2 \n",current_time);
+
+
+  for (uint i=h_simulation_params_.num_boundary_particles; i<numParticles_; i++)  {
+	  fprintf(pFile,"%10.9e, %10.9e, %10.9e %10.9e, %10.9e, %10.9e %10.9e %10.9e\n", h_pospres_[i*4+0], h_pospres_[i*4+1], h_pospres_[i*4+2], h_velrhop_[i*4+0], h_velrhop_[i*4+1], h_velrhop_[i*4+2], h_velrhop_[i*4+3], h_pospres_[i*4+3]);
+  }
     fclose(pFile);
 }
 

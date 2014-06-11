@@ -38,13 +38,13 @@
 #define MAX_EPSILON_ERROR 5.00
 #define THRESHOLD         0.30
 
-#define NUM_PARTICLES   43324
+#define NUM_PARTICLES   5281
 
 uint numParticles = 0;
 int numIterations = 1; // run until exit
 
 // simulation parameters
-Real timestep = 1e-6;
+Real timestep = 1.0e-5;
 Real damping = 1.0;
 Real gravity = 0.0003;
 int iterations = 3;
@@ -69,7 +69,7 @@ void initParticleSystem(int numParticles)
 {
     psystem = new ParticleSystem(numParticles);
     psystem->load("Fluid.asc");
-    psystem->dumpParticles(0,psystem->getNumParticles(),"PART_0000.dat");
+    psystem->dumpParticles(0,psystem->getNumParticles(),0.0,"PART_0000.dat");
     sdkCreateTimer(&timer);
 }
 
@@ -83,23 +83,29 @@ void runBenchmark(int iterations, char *exec_path)
     printf("Run %u particles simulation for %d iterations...\n\n", numParticles, iterations);
     cudaDeviceSynchronize();
     sdkStartTimer(&timer);
-    int printStep = 10000;
-
+    int printStep = 1000;
+    int screenStep = 1000;
+    Real current_time = 0.0;
     char buffer[32]; // The filename buffer.
 
-    psystem->dumpParticles(0,psystem->getNumParticles(),"PART_0000.dat");
+    psystem->dumpParticles(0,psystem->getNumParticles(),0.0,"PART_0000.dat");
 
     for (int i = 0; i < iterations; ++i)
     {
         psystem->update(timestep);
-
+        current_time = current_time + timestep;
         if(!(i%printStep)){
         	snprintf(buffer, sizeof(char) * 32, "PART%i.dat", i);
-        	psystem->dumpParticles(0,psystem->getNumParticles(),buffer);
+        	psystem->dumpParticles(0,psystem->getNumParticles(),current_time,buffer);
         }
-        printf("%d \n",i);
-    }
 
+        if(!(i%screenStep)){
+        	printf("iteration = %d \n",i);
+        }
+
+    }
+    snprintf(buffer, sizeof(char) * 32, "PART%i.dat", iterations);
+    psystem->dumpParticles(0,psystem->getNumParticles(),current_time,buffer);
     cudaDeviceSynchronize();
     sdkStopTimer(&timer);
     Real fAvgSeconds = ((Real)1.0e-3 * (Real)sdkGetTimerValue(&timer)/(Real)iterations);
@@ -191,15 +197,15 @@ main(int argc, char **argv)
 
     initParticleSystem(numParticles);
 
-    if (benchmark)
-    {
+//    if (benchmark)
+//    {
         if (numIterations <= 0)
         {
-            numIterations = 100000;
+            numIterations = 20000;
         }
 
         runBenchmark(numIterations, argv[0]);
-    }
+//    }
 
     if (psystem)
     {
