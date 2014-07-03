@@ -27,9 +27,9 @@ class ParticleSystem
         ParticleSystem(uint numParticles); // Constructor
         ~ParticleSystem(); // Delete particle system
 
-        Real update(Real deltaTime); // Integrates particle system in time
+        Real update(Real &deltaTime); // Integrates particle system in time
         void load(std::string config); // Loads initial particle distribution from input file
-        void apply_shepard_filter(); // Applies Sheppard density filter
+        void apply_sheppard_filter(); // Applies Sheppard density filter
         void dumpGrid(); // Prints out grid info
         void dumpParticles(uint start, uint count, Real current_time, const char *fileName); // Prints particle positions to a file
         void dumpParameters();
@@ -79,9 +79,10 @@ class ParticleSystem
         Real *d_sorted_pospres_; // stores particle position and pressure data, sorted according to grid index
 		Real *d_sorted_velrhop_; // stores particle velocity and density data, sorted according to grid index
 		uint *d_sorted_type_; // stores particle type data, sorted according to grid index
-
+		Real *d_velxcor_; // velocity correction for xsph variant
         // Adaptive time step data
         Real *d_visc_dt_; // holds maximum dt value of each particle based on viscous considerations. (See Lui and Lui, 2003)
+        Real *d_force_dt_; // holds maximum dt value of each particle based on acceleration
         Real *d_max_accel_; // holds maximum acceleration of all particles
         Real *d_max_sound_speed_; // holds maximum sound speed of all particles
         Real *d_norm_ace_; // Norm of particle acceleration: sqrt(a.x^2 + a.y^2 + a.z^2)

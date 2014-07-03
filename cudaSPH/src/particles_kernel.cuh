@@ -53,9 +53,12 @@ struct simulation_parameters
 	Real boundary_mass; // Mass of a boundary particle, kg
 	Real cs0; // Speed of sound (m/s) at reference density.
 	Real wendland_a1,wendland_a2; // Constants for the Wendland kernel
+	Real sheppard; // Constant for sheppard density filter
 	Real epsilon; // small number used in artificial viscosity model to avoid division by 0
+	Real eps; // coefficient used for XSPH variant
 	Real nu; // dynamic viscosity
 	Real cfl_number; // courant-friedric-levy number
+	Real pi; // pi
 
 	// Tait EOS parameters
 	Real gamma; // ratio of specific heats
@@ -90,6 +93,7 @@ struct execution_parameters
 //	std::string output_directory; // directory where code will place all output files
 	Real fixed_dt; // fixed time step value. Default is to use adaptive time stepping
 	periodicity periodic_in; // used for periodic boundary conditions. Default is none
+	bool xsph; // when true, use xsph (Monaghan, 1989) variant to move particles
 
 };
 
@@ -201,15 +205,14 @@ namespace gpusph
 	                         Real *velrhop,
 	                         Real *pospres_pre,
 	                         Real *velrhop_pre,
+	                         Real *velxcor,
 	                         Real *ace_drhodt,
-	                         Real deltaTime,
 	                         uint numParticles);
-	void correctorStep(Real *pos,
-	                         Real *vel,
-	                         Real *pospre,
-	                         Real *velpre,
+	void correctorStep(Real *pospres,
+	                         Real *velrhop,
+	                         Real *pospre_pre,
+	                         Real *velpre_pre,
 	                         Real *ace_drhodt,
-	                         Real deltaTime,
 	                         uint numParticles);
 	void calcHash(uint  *gridParticleHash,
 	                  uint  *gridParticleIndex,
@@ -235,6 +238,7 @@ namespace gpusph
 				   Real *viscdt, // output: max time step for adaptive time stepping
 				   uint numParticles);
 	void compute_interactions(Real *ace_drhodt,
+					 Real *velxcorr,
 	                 Real *sorted_velrhop,
 	                 Real *sorted_pospres,
 	                 uint  *gridParticleIndex,
@@ -246,11 +250,17 @@ namespace gpusph
 	                 uint   numCells,
 	                 uint  *neighbors);
 	void sortParticles(uint *dGridParticleHash, uint *dGridParticleIndex, uint numParticles);
+    void reduceAccel(Real *ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+    				 Real *velrhop,
+    				   Real *forcedt, // output: max time step for adaptive time stepping based on acceleration
+    				   Real *viscdt, // output: max time step based on viscous diffusion
+    				   uint numParticles);
+    Real get_time_step(Real *forcedt, Real *viscdt, uint numParticles);
 	void zero_acceleration(Real *ace_drhodt, uint numParticles);
 	void zero_ycomponent(Real *data, uint numParticles);
-	void sheppard_density_filter(Real4 *velrhop,
-								 Real4 *sorted_velrhop,
-								 Real4 *sorted_pospres,
+	void sheppard_density_filter(Real *velrhop,
+								 Real *sorted_velrhop,
+								 Real *sorted_pospres,
 								 uint *gridParticleIndex, // input: sorted particle indicies
 								 uint *cellStart,
 								 uint *cellEnd,
@@ -283,7 +293,7 @@ namespace gpusph
 	__device__
 	void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
 									   Real4 pospres2, Real4 velrhop2, Real massp2,
-									   Real3 &acep1, Real &arp1, Real &visc, uint &neigh1);
+									   Real3 &acep1, Real &arp1, Real &visc, uint &neigh1, Real3 &vcor);
 	__device__
 	void interact_with_cell(int3 gridPos, //
 							uint index, // index of particle i
@@ -298,11 +308,13 @@ namespace gpusph
 							Real  &visc, // Max dt for particle i based on viscous considerations
 							uint *cellStart, // Index of 1st particle in each grid cell
 							uint *cellEnd,
-							uint &neigh1); // Index of last particle in each grid cell
+							uint &neigh1,
+							Real3 &vcor); // Index of last particle in each grid cell
 	__global__
 	void compute_particle_interactions(Real4 *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
 									   Real4 *velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
 									   Real4 *pospres, // input: sorted particle positions and pressures
+									   Real4 *velxcorr, // output: velocity correction for xsph variant
 									   uint *gridParticleIndex, // input: sorted particle indicies
 									   uint *cellStart,
 									   uint *cellEnd,
@@ -316,6 +328,13 @@ namespace gpusph
 					   Real4 *pospres, // input: sorted particle positions and pressures
 					   Real *viscdt, // output: max time step for adaptive time stepping
 					   uint numParticles);
+	__global__
+	void reduceAccelD(Real4 *ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+			   Real4 *velrhop,
+			   Real *forcedt, // output: max time step for adaptive time stepping based on acceleration
+			   Real *viscdt, // output: max time step based on viscous diffusion
+			   uint numParticles);
+
 	__global__ void zero_accelerationD(Real4 *ace_drhodt);
 	__global__ void zero_ycomponentD(Real4 *data, uint numParticles);
 	__global__
@@ -327,6 +346,35 @@ namespace gpusph
 								 uint *cellEnd,
 								 uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
 								 uint numParticles);
+	 __device__
+		void sheppard_interact_with_cell(int3 gridPos, //
+								uint index, // index of particle i
+								uint   *type, // Ordered particle type data for all particles
+								Real4 pospres1, // position vector and pressure of particle i
+								Real4 velrhop1, // velocity and density of particle i
+								Real4 *pospres, // Ordered position and pressure data for all particles
+								Real4 *velrhop, // Ordered velocity and density data for all particles
+								Real &sum_W, // Acceleration accumulator for particle i
+								Real &sum_mass_W, // Density derivative accumulator for particle i
+								uint *cellStart, // Index of 1st particle in each grid cell
+								uint *cellEnd); // Index of last particle in each grid cell
+
+	    __global__
+	    void predictorStepD(Real4 *pospres, // input: particle positions and pressures
+				   Real4 *velrhop, // input: velocity and density (v.x,v.y,v.z,rhop)
+				   Real4 *pospres_Pre, // output: particle positions and pressures after predictor step
+				   Real4 *velrhop_Pre, // output: particle velocity and density after predictor step
+				   Real4 *velxcor, // input: XSPH velocity correction
+	    		   Real4 *ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+				   uint numParticles);
+
+	    __global__
+	     void correctorStepD(Real4 *pospres, // output: particle positions and pressures
+				   Real4 *velrhop, // output: velocity and density (v.x,v.y,v.z,rhop)
+				   Real4 *pospres_Pre, // input: particle positions and pressures after predictor step
+				   Real4 *velrhop_Pre, // input: particle velocity and density after predictor step
+	    		   Real4 *ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+				   uint numParticles);
 
 
 

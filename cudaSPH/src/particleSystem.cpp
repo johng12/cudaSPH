@@ -53,8 +53,9 @@ ParticleSystem::ParticleSystem(uint numParticles):
 	d_sorted_pospres_(0),
 	d_sorted_velrhop_(0),
 	d_sorted_type_(0),
-
+	d_velxcor_(0),
 	d_visc_dt_(0),
+	d_force_dt_(0),
 	d_max_accel_(0),
 	d_max_sound_speed_(0),
 	d_norm_ace_(0),
@@ -71,31 +72,32 @@ ParticleSystem::ParticleSystem(uint numParticles):
     m_timer(NULL)
 {
 	// set simulation parameters
-	h_simulation_params_.num_particles = 5281;
-	h_simulation_params_.num_boundary_particles = 481;
-	h_simulation_params_.num_fluid_particles = 4800;
+	h_simulation_params_.num_particles = 75805;
+	h_simulation_params_.num_boundary_particles = 50951;
+	h_simulation_params_.num_fluid_particles = 24854;
 
 	h_simulation_params_.gravity = make_Real3(0.0, 0.0, -9.81);
-	h_simulation_params_.smoothing_length = 6.1237215018E-03;
+	h_simulation_params_.smoothing_length = 2.7712812921E-02;
+//	h_simulation_params_.smoothing_length = 7.5E-03;
 	h_simulation_params_.over_smoothing_length = 1.0 / h_simulation_params_.smoothing_length;
 	h_simulation_params_.four_h_squared = 4.0 * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length;
 	h_simulation_params_.rhop0 = 1000.0;
 	h_simulation_params_.over_rhop0 = 1.0 / 1000.0;
-	h_simulation_params_.fluid_mass = 2.5000000000E-02;
-	h_simulation_params_.boundary_mass = 2.5000000000E-02;
+	h_simulation_params_.fluid_mass = 8.0000000000E-03;
+	h_simulation_params_.boundary_mass = 8.0000000000E-03;
+	h_simulation_params_.eps = 0.5;
 
-	h_simulation_params_.wendland_a1 = 0.557/(h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
-	h_simulation_params_.wendland_a2 = -2.7852/(h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
 	h_simulation_params_.epsilon = 1e-3;
 	h_simulation_params_.nu = 1e-3;
 	h_simulation_params_.gamma = 7.0;
-	h_simulation_params_.b_coeff = 1.6536857143E+05;
-	h_simulation_params_.cs0 = sqrt(h_simulation_params_.b_coeff * h_simulation_params_.gamma * h_simulation_params_.over_rhop0);
+	h_simulation_params_.b_coeff = 4.7648571429E+04;
+	h_simulation_params_.cs0 = 10.0*sqrt(h_simulation_params_.b_coeff * h_simulation_params_.gamma * h_simulation_params_.over_rhop0);
 	h_simulation_params_.cfl_number = 0.3;
+	h_simulation_params_.pi = 3.14159265358979323846;
 
 	// set domain parameters
-	h_domain_params_.world_origin = make_Real3(0.0, 0.0, 0.0);
-    h_domain_params_.world_size = make_Real3(1.6, 0.67, 0.4);
+	h_domain_params_.world_origin = make_Real3(-1.0, -1.0, -1.0);
+    h_domain_params_.world_size = make_Real3(2.0, 2.0, 2.0);
     Real3 domainMin = h_domain_params_.world_origin - 0.1 * h_simulation_params_.smoothing_length;
 	Real3 domainMax = h_domain_params_.world_origin + h_domain_params_.world_size + 0.1 * h_simulation_params_.smoothing_length;
 	h_domain_params_.world_origin = domainMin;
@@ -121,7 +123,21 @@ ParticleSystem::ParticleSystem(uint numParticles):
     h_exec_params_.periodic_in = NONE;
     h_exec_params_.print_interval = 1e-3;
     h_exec_params_.save_interval = 1e-3;
-    h_exec_params_.simulation_dimension = TWO_D;
+    h_exec_params_.simulation_dimension = THREE_D;
+    h_exec_params_.xsph = true;
+
+    if(h_exec_params_.simulation_dimension == TWO_D)
+    {
+    	h_simulation_params_.wendland_a1 = 7.0/(4.0 * h_simulation_params_.pi * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
+    	h_simulation_params_.wendland_a2 = -2.7852/(h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
+    	h_simulation_params_.sheppard = h_simulation_params_.wendland_a1;
+    }
+    else
+    {
+    	h_simulation_params_.wendland_a1 = 21.0/(16.0 * h_simulation_params_.pi * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
+		h_simulation_params_.wendland_a2 = -2.08891/(h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
+		h_simulation_params_.sheppard = h_simulation_params_.wendland_a1;
+    }
 
     _initialize(numParticles);
 
@@ -175,12 +191,14 @@ ParticleSystem::_initialize(int numParticles)
 	gpusph::allocateArray((void **)&d_pospres_pre_, memSize);
 	gpusph::allocateArray((void **)&d_velrhop_pre_, memSize);
 	gpusph::allocateArray((void **)&d_ace_drho_dt_, memSize);
+	gpusph::allocateArray((void **)&d_velxcor_,memSize);
 	gpusph::allocateArray((void **)&d_particle_type_, sizeof(uint) * numParticles_);
 	gpusph::allocateArray((void **)&d_sorted_pospres_, memSize);
 	gpusph::allocateArray((void **)&d_sorted_velrhop_, memSize);
 	gpusph::allocateArray((void **)&d_sorted_type_, sizeof(uint) * numParticles_);
 
 	gpusph::allocateArray((void **)&d_visc_dt_,sizeof(Real) * numParticles_);
+	gpusph::allocateArray((void **)&d_force_dt_,sizeof(Real)* numParticles );
 	gpusph::allocateArray((void **)&d_norm_ace_,sizeof(Real) * numParticles_);
 	gpusph::allocateArray((void **)&d_max_accel_,sizeof(Real));
 	gpusph::allocateArray((void **)&d_max_sound_speed_,sizeof(Real));
@@ -226,8 +244,10 @@ ParticleSystem::_finalize()
     gpusph::freeArray(d_sorted_pospres_);
     gpusph::freeArray(d_sorted_velrhop_);
     gpusph::freeArray(d_sorted_type_);
+    gpusph::freeArray(d_velxcor_);
 
     gpusph::freeArray(d_visc_dt_);
+    gpusph::freeArray(d_force_dt_);
     gpusph::freeArray(d_max_accel_);
     gpusph::freeArray(d_max_sound_speed_);
 
@@ -244,10 +264,11 @@ ParticleSystem::_finalize()
 
 // step the simulation and return the current time step
 Real
-ParticleSystem::update(Real deltaTime)
+ParticleSystem::update(Real &deltaTime)
 {
     assert(initialized_);
-
+    deltaTime = h_simulation_params_.cfl_number * h_simulation_params_.smoothing_length/h_simulation_params_.cs0;
+    h_exec_params_.fixed_dt = deltaTime;
     // update constants
     gpusph::set_domain_parameters(&h_domain_params_);
 	gpusph::set_sim_parameters(&h_simulation_params_);
@@ -313,6 +334,7 @@ ParticleSystem::update(Real deltaTime)
 
 		// process particle interactions
 		gpusph::compute_interactions(d_ace_drho_dt_,
+							 d_velxcor_,
 							 d_sorted_velrhop_,
 							 d_sorted_pospres_,
 							 d_particle_index_,
@@ -331,7 +353,11 @@ ParticleSystem::update(Real deltaTime)
 		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
 
 		// zero out y-component of data for 2D simulations
-		if(h_exec_params_.simulation_dimension == TWO_D) gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
+		if(h_exec_params_.simulation_dimension == TWO_D)
+			{
+				gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
+				gpusph::zero_ycomponent(d_velxcor_,numParticles_);
+			}
 
 //		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
 //		FILE *pFile;
@@ -342,14 +368,19 @@ ParticleSystem::update(Real deltaTime)
 //		}
 //		fclose(pFile);
 
+//		gpusph::reduceAccel(d_ace_drho_dt_,d_velrhop_, d_force_dt_,d_visc_dt_,numParticles_);
+//		deltaTime = gpusph::get_time_step(d_force_dt_,d_visc_dt_,numParticles_);
+//
+//		gpusph::set_exec_parameters(&h_exec_params_);
+
 		// predictor step
 		gpusph::predictorStep(
 			d_pospres_,
 			d_velrhop_,
 			d_pospres_pre_,
 			d_velrhop_pre_,
+			d_velxcor_,
 			d_ace_drho_dt_,
-			deltaTime,
 			numParticles_);
     }
 
@@ -391,6 +422,7 @@ ParticleSystem::update(Real deltaTime)
 
 		// process particle interactions
 		gpusph::compute_interactions(d_ace_drho_dt_,
+							 d_velxcor_,
     						 d_sorted_velrhop_,
 							 d_sorted_pospres_,
 							 d_particle_index_,
@@ -406,7 +438,10 @@ ParticleSystem::update(Real deltaTime)
 		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
 
 		// zero out y-component of data for 2D simulations. still need to add C wrapper to this as well
-		if(h_exec_params_.simulation_dimension == TWO_D) gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
+		if(h_exec_params_.simulation_dimension == TWO_D) {
+			gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
+			gpusph::zero_ycomponent(d_velxcor_,numParticles_);
+		}
 
 		// corrector step
         gpusph::correctorStep(
@@ -415,7 +450,6 @@ ParticleSystem::update(Real deltaTime)
             d_pospres_pre_,
             d_velrhop_pre_,
             d_ace_drho_dt_,
-            deltaTime,
             numParticles_);
 
 		// evaluate new pressures.
@@ -432,7 +466,7 @@ ParticleSystem::update(Real deltaTime)
 }
 
 void
-ParticleSystem::apply_shepard_filter()
+ParticleSystem::apply_sheppard_filter()
 {
 	assert(initialized_);
 
@@ -481,8 +515,7 @@ ParticleSystem::apply_shepard_filter()
 									d_cell_start_,
 									d_cell_end_,
 									d_sorted_type_,
-									numParticles_,
-									h_numGridCells_);
+									numParticles_);
 
 }
 

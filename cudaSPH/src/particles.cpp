@@ -38,7 +38,7 @@
 #define MAX_EPSILON_ERROR 5.00
 #define THRESHOLD         0.30
 
-#define NUM_PARTICLES   5281
+#define NUM_PARTICLES   75805
 
 uint numParticles = 0;
 int numIterations = 1; // run until exit
@@ -83,8 +83,9 @@ void runBenchmark(int iterations, char *exec_path)
     printf("Run %u particles simulation for %d iterations...\n\n", numParticles, iterations);
     cudaDeviceSynchronize();
     sdkStartTimer(&timer);
-    int printStep = 1000;
-    int screenStep = 1000;
+    int printStep = 100;
+    int screenStep = 100;
+    int filterStep = 30;
     Real current_time = 0.0;
     char buffer[32]; // The filename buffer.
 
@@ -100,9 +101,12 @@ void runBenchmark(int iterations, char *exec_path)
         }
 
         if(!(i%screenStep)){
-        	printf("iteration = %d \n",i);
+        	printf("iteration = %d time = %5.4f \n",i,current_time);
         }
 
+        if(!(i%filterStep)){
+        	psystem->apply_sheppard_filter();
+        }
     }
     snprintf(buffer, sizeof(char) * 32, "PART%i.dat", iterations);
     psystem->dumpParticles(0,psystem->getNumParticles(),current_time,buffer);
@@ -201,7 +205,7 @@ main(int argc, char **argv)
 //    {
         if (numIterations <= 0)
         {
-            numIterations = 20000;
+            numIterations = 70000;
         }
 
         runBenchmark(numIterations, argv[0]);
