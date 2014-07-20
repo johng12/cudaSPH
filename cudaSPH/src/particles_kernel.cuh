@@ -44,7 +44,8 @@ struct simulation_parameters
 
 	// Parameters used in force computations
 	Real3 gravity; // body force per unit mass due to gravity m/s^2
-	Real smoothing_length; // m^3
+	Real dp; // Particle spacing (m)
+	Real smoothing_length; // m
 	Real over_smoothing_length; // 1/smoothing_length
 	Real four_h_squared; // (2*smoothing_length)^2
 	Real rhop0; // Reference density kg/m^3
@@ -72,7 +73,10 @@ struct domain_parameters
 	uint3 grid_size; // Number of grid cells in each dimension (x,y,z)
 	uint num_cells; // Total number of grid cells = gridSize.x*gridSize.y*gridSize.z
 	Real3 world_origin; // Minimum point of bounding box
+	Real3 world_limits; // Maximum point of bounding box
 	Real3 world_size; // Size of bounding box
+	Real3 domainMin;
+	Real3 domainMax;
 	Real3 cell_size; // Dimensions of a single grid cell = 2 * smoothing_length
 
 	// Neighbor Search Statistics
@@ -94,6 +98,7 @@ struct execution_parameters
 	Real fixed_dt; // fixed time step value. Default is to use adaptive time stepping
 	periodicity periodic_in; // used for periodic boundary conditions. Default is none
 	bool xsph; // when true, use xsph (Monaghan, 1989) variant to move particles
+	Real simulation_duration; // Length of simulation in seconds
 
 };
 

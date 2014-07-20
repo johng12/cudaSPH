@@ -38,38 +38,38 @@
 #define MAX_EPSILON_ERROR 5.00
 #define THRESHOLD         0.30
 
-#define NUM_PARTICLES   75805
+#define NUM_PARTICLES   20161
 
 uint numParticles = 0;
 int numIterations = 1; // run until exit
 
 // simulation parameters
 Real timestep = 1.0e-5;
-Real damping = 1.0;
-Real gravity = 0.0003;
-int iterations = 3;
-int ballr = 10;
-
-Real collideSpring = 0.5;
-Real collideDamping = 0.02;
-Real collideShear = 0.1;
-Real collideAttraction = 0.0;
+Real save_interval;
+Real print_interval;
+Real simulation_duration;
 
 ParticleSystem *psystem = 0;
 StopWatchInterface *timer = NULL;
 
 // Auto-Verification Code
 unsigned int g_TotalErrors = 0;
-char        *g_refFile = NULL;
+char        *cfgFileName = NULL;
+char *meshFileName = NULL;
 
-const char *sSDKsample = "CUDA Particles Simulation";
+const char *programName = "GPUSPH Simulation";
 
 // initialize particle system
-void initParticleSystem(int numParticles)
+void initParticleSystem(const char *cfgFileName, const char *meshFileName)
 {
-    psystem = new ParticleSystem(numParticles);
-    psystem->load("Fluid.asc");
-    psystem->dumpParticles(0,psystem->getNumParticles(),0.0,"PART_0000.dat");
+
+    psystem = new ParticleSystem(cfgFileName);
+    psystem->load(meshFileName);
+
+    numParticles = psystem ->getNumParticles();
+    save_interval = psystem ->getSaveInterval();
+    print_interval = psystem ->getPrintInterval();
+    simulation_duration = psystem ->getSimulationDuration();
     sdkCreateTimer(&timer);
 }
 
@@ -78,69 +78,64 @@ void cleanup()
     sdkDeleteTimer(&timer);
 }
 
-void runBenchmark(int iterations, char *exec_path)
+void runCase(char *exec_path)
 {
-    printf("Run %u particles simulation for %d iterations...\n\n", numParticles, iterations);
+    printf("Run %u particles simulation for %f seconds...\n", numParticles, simulation_duration);
+    printf("Save interval: %e seconds...\n",save_interval);
+    printf("Printscreen interval: %e seconds...\n\n",print_interval);
     cudaDeviceSynchronize();
     sdkStartTimer(&timer);
-    int printStep = 100;
-    int screenStep = 100;
-    int filterStep = 30;
+    int iteration = 1;
+    int part = 1;
+    int print = 1;
     Real current_time = 0.0;
     char buffer[32]; // The filename buffer.
 
-    psystem->dumpParticles(0,psystem->getNumParticles(),0.0,"PART_0000.dat");
+    psystem ->dumpParameters();
+    printf("*************************************************\n\n");
+    printf("iteration       current time       time step \n");
+    printf("---------------------------------------------\n");
+    snprintf(buffer, sizeof(char) * 32, "PART_%04i.dat", 0);
+	psystem->dumpParticles(0,psystem->getNumParticles(),current_time,buffer);
 
-    for (int i = 0; i < iterations; ++i)
+    while (current_time < simulation_duration)
     {
         psystem->update(timestep);
         current_time = current_time + timestep;
-        if(!(i%printStep)){
-        	snprintf(buffer, sizeof(char) * 32, "PART%i.dat", i);
+        if(current_time - save_interval*(part - 1) >= save_interval )
+        {
+        	snprintf(buffer, sizeof(char) * 32, "PART_%04i.dat", part);
         	psystem->dumpParticles(0,psystem->getNumParticles(),current_time,buffer);
+        	part++;
         }
 
-        if(!(i%screenStep)){
-        	printf("iteration = %d time = %5.4f \n",i,current_time);
+        if(current_time - print_interval*(print - 1) >= print_interval )
+        {
+        	if(!(print%10))
+        	{
+				printf("\n iteration       current time       time step \n");
+				printf("---------------------------------------------\n");
+        	}
+        	printf(" %d              %5.4e              %5.4e \n",iteration,current_time,timestep);
+        	print++;
         }
 
-        if(!(i%filterStep)){
-        	psystem->apply_sheppard_filter();
-        }
+//        if(!(iteration%filterStep)){
+//        	psystem->apply_sheppard_filter();
+//        }
+
+        iteration++;
     }
-    snprintf(buffer, sizeof(char) * 32, "PART%i.dat", iterations);
+
+    snprintf(buffer, sizeof(char) * 32, "PART_%04i.dat", part);
     psystem->dumpParticles(0,psystem->getNumParticles(),current_time,buffer);
     cudaDeviceSynchronize();
     sdkStopTimer(&timer);
-    Real fAvgSeconds = ((Real)1.0e-3 * (Real)sdkGetTimerValue(&timer)/(Real)iterations);
-    psystem->dumpParameters();
+    Real fAvgSeconds = ((Real)1.0e-3 * (Real)sdkGetTimerValue(&timer)/(Real)iteration);
+    psystem ->dumpParameters();
     printf("particles, Throughput = %.4f KParticles/s, Time = %.5f s, Size = %u particles, NumDevsUsed = %u, Workgroup = %u\n",
            (1.0e-3 * numParticles)/fAvgSeconds, fAvgSeconds, numParticles, 1, 0);
-//    if (g_refFile)
-//    {
-//        printf("\nChecking result...\n\n");
 
-//        Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
-//        hPos = psystem->getArray(ParticleSystem::POSITION);
-//                            0, sizeof(Real)*4*psystem->getNumParticles());
-
-//        Real *hPos = (Real *)malloc(sizeof(Real)*4*psystem->getNumParticles());
-//        copyArrayFromDevice(hPos, psystem->getCudaPosVBO(),
-//                            0, sizeof(Real)*4*psystem->getNumParticles());
-
-//
-
-//        sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
-
-//        sdkDumpBin((void *)hPos, sizeof(Real)*4*psystem->getNumParticles(), "particles.bin");
-
-//
-//        if (!sdkCompareBin2BinFloat("particles.bin", g_refFile, sizeof(float)*4*psystem->getNumParticles(),
-//                                    MAX_EPSILON_ERROR, THRESHOLD, exec_path))
-//        {
-//            g_TotalErrors++;
-//        }
-//    }
 }
 
 inline Real frand()
@@ -154,62 +149,49 @@ inline Real frand()
 int
 main(int argc, char **argv)
 {
-    printf("%s Starting...\n\n", sSDKsample);
+    printf("\n************************************ \n");
+    printf("%s Starting...\n\n", programName);
 
-    numParticles = NUM_PARTICLES;
-    numIterations = 0;
+//    numIterations = 0;
+//    char *iter;
 
-    if (argc > 1)
-    {
-        if (checkCmdLineFlag(argc, (const char **) argv, "n"))
-        {
-            numParticles = getCmdLineArgumentInt(argc, (const char **)argv, "n");
-        }
 
-        if (checkCmdLineFlag(argc, (const char **)argv, "file"))
-        {
-            getCmdLineArgumentString(argc, (const char **)argv, "file", &g_refFile);
-            numIterations = 1;
-        }
-    }
+	if (checkCmdLineFlag(argc, (const char **)argv, "cfgFile"))
+	{
+		getCmdLineArgumentString(argc, (const char **)argv, "cfgFile", &cfgFileName);
+	}
+	else
+	{
+		printf("Error: cfgFile missing. \n");
+		exit(1);
+	}
 
-    printf("particles: %d\n", numParticles);
+	if (checkCmdLineFlag(argc, (const char **)argv, "meshFile"))
+	{
+		getCmdLineArgumentString(argc, (const char **)argv, "meshFile", &meshFileName);
+	}
+	else
+	{
+		printf("Error: meshFile missing. \n");
+		exit(1);
+	}
 
-    bool benchmark = checkCmdLineFlag(argc, (const char **) argv, "benchmark") != 0;
 
-    if (checkCmdLineFlag(argc, (const char **) argv, "i"))
-    {
-        numIterations = getCmdLineArgumentInt(argc, (const char **) argv, "i");
-    }
-
-    if (g_refFile)
-    {
-        gpusph::cudaInit(argc, argv);
-    }
-    else
-    {
-        if (checkCmdLineFlag(argc, (const char **)argv, "device"))
-        {
-            printf("[%s]\n", argv[0]);
-            printf("   Does not explicitly support -device=n in OpenGL mode\n");
-            printf("   To use -device=n, the sample must be running w/o OpenGL\n\n");
-            printf(" > %s -device=n -file=<*.bin>\n", argv[0]);
-            printf("exiting...\n");
-            exit(EXIT_SUCCESS);
-        }
-    }
-
-    initParticleSystem(numParticles);
-
-//    if (benchmark)
+//    if (checkCmdLineFlag(argc, (const char **) argv, "iter"))
 //    {
-        if (numIterations <= 0)
-        {
-            numIterations = 70000;
-        }
-
-        runBenchmark(numIterations, argv[0]);
+//    	getCmdLineArgumentString(argc, (const char **)argv, "iter", &iter);
+//    	numIterations = (uint)atoi(iter);
 //    }
+
+    initParticleSystem(cfgFileName,meshFileName);
+//
+//	if (numIterations <= 0)
+//	{
+//		numIterations = 1;
+//	}
+
+	runCase(argv[0]);
+
 
     if (psystem)
     {

@@ -138,6 +138,18 @@ all: build
 
 build: particles
 
+tinyxml.o: tinyxml.cpp 
+	$(NVCC) -o $@ -c $<
+	
+tinyxmlparser.o: tinyxmlparser.cpp 
+	$(NVCC) -o $@ -c $<
+	
+tinyxmlerror.o: tinyxmlerror.cpp 
+	$(NVCC) -o $@ -c $<
+	
+tinystr.o: tinystr.cpp
+	$(NVCC) -o $@ -c $<
+	
 particleSystem_cuda.o: particleSystem_cuda.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
@@ -147,7 +159,7 @@ particles.o: particles.cpp
 particleSystem.o: particleSystem.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-particles: particles.o particleSystem_cuda.o particleSystem.o 
+particles: particles.o particleSystem_cuda.o particleSystem.o tinyxml.o tinyxmlparser.o tinyxmlerror.o tinystr.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) -o $@ $+ $(LIBRARIES)
 	$(EXEC) mkdir -p ../../bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))
 	$(EXEC) cp $@ ../../bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))

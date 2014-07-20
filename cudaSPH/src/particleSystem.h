@@ -19,15 +19,18 @@
 #include "particles_kernel.cuh"
 #include "vector_functions.h"
 #include <string>
+#include "tinyxml.h"
 
 // Particle system class
 class ParticleSystem
 {
     public:
-        ParticleSystem(uint numParticles); // Constructor
+        ParticleSystem(const char *cfgFileName); // Constructor
         ~ParticleSystem(); // Delete particle system
 
         Real update(Real &deltaTime); // Integrates particle system in time
+        void loadCfg(const char *fileName); // Loads case parameters from Xml Config file
+        void setDerivedInputs();
         void load(std::string config); // Loads initial particle distribution from input file
         void apply_sheppard_filter(); // Applies Sheppard density filter
         void dumpGrid(); // Prints out grid info
@@ -42,12 +45,16 @@ class ParticleSystem
         Real3 getWorldOrigin() {return h_domain_params_.world_origin;}
         Real3 getCellSize() {return h_domain_params_.cell_size;}
         uint3 getGridSize() const {return h_domain_params_.grid_size;}
+        Real getSaveInterval() {return h_exec_params_.save_interval;}
+        Real getPrintInterval() {return h_exec_params_.print_interval;}
+        Real getSimulationDuration() {return h_exec_params_.simulation_duration;}
+
 //        Real get_time_step();
 
     protected: // methods
         ParticleSystem() {}
 
-        void _initialize(int numParticles);
+        void _initialize();
         void _finalize();
 
         void initGrid(uint *size, Real spacing, Real jitter, uint numParticles);
@@ -102,9 +109,6 @@ class ParticleSystem
         simulation_parameters h_simulation_params_;
         domain_parameters h_domain_params_;
         execution_parameters h_exec_params_;
-
-        uint3 h_grid_size_;
-        uint h_numGridCells_;
 
         StopWatchInterface *m_timer;
 

@@ -383,16 +383,16 @@ namespace gpusph
     __device__ int3 calcGridPos(Real3 p)
     {
         int3 gridPos;
-        gridPos.x = floor((p.x - domain_params.world_origin.x) / domain_params.cell_size.x);
-        gridPos.y = floor((p.y - domain_params.world_origin.y) / domain_params.cell_size.y);
-        gridPos.z = floor((p.z - domain_params.world_origin.z) / domain_params.cell_size.z);
+        gridPos.x = floor((p.x - domain_params.domainMin.x) / domain_params.cell_size.x);
+        gridPos.y = floor((p.y - domain_params.domainMin.y) / domain_params.cell_size.y);
+        gridPos.z = floor((p.z - domain_params.domainMin.z) / domain_params.cell_size.z);
         if(gridPos.x >= domain_params.grid_size.x) gridPos.x = domain_params.grid_size.x - 1;
         if(gridPos.y >= domain_params.grid_size.y) gridPos.y = domain_params.grid_size.y - 1;
         if(gridPos.z >= domain_params.grid_size.z) gridPos.z = domain_params.grid_size.z - 1;
         return gridPos;
     }
 
-    // calculate address in grid from position (clamping to edges)
+    // calculate address in grid from position
     __device__ uint calcGridHash(int3 gridPos)
     {
 
@@ -530,7 +530,7 @@ namespace gpusph
     			const Real wqq1 = 1.0 - 0.5 * qq;
     			const Real wqq2 = wqq1 * wqq1;
     			wab = sim_params.wendland_a1 * wqq * wqq2 * wqq2;
-    			fac = -5.0 * sim_params.wendland_a1 * wqq2 * wqq1 * sim_params.over_smoothing_length * sim_params.over_smoothing_length;
+    			fac = sim_params.wendland_a2 * qq * wqq2 * wqq1/rad;
 
     			frx = fac * drx; fry = fac * dry; frz = fac * drz;
     		}
@@ -740,7 +740,7 @@ namespace gpusph
         velxcor[originalIndex] = make_Real4(0.0, 0.0, 0.0,0.0);
         velxcor[originalIndex] = make_Real4(velcorr1,0.0);
         viscdt[originalIndex] = visc;
-        neighbors[originalIndex] = neigh1;
+        neighbors[index] = neigh1;
     }
     }
 
@@ -985,10 +985,10 @@ namespace gpusph
     }
 
     __global__
-    void predictorStepD(Real4 *pospres, // output: particle positions and pressures after predictor step
-			   Real4 *velrhop, // output: particle velocity and density after predictor step
-			   Real4 *pospres_Pre, // input: particle positions and pressures
-			   Real4 *velrhop_Pre, // input: velocity and density (v.x,v.y,v.z,rhop)
+    void predictorStepD(Real4 *pospres, // input: particle positions and pressures before predictor step
+			   Real4 *velrhop, // input: particle velocity and density before predictor step
+			   Real4 *pospres_Pre, // output: particle positions and pressures at half time step
+			   Real4 *velrhop_Pre, // output: velocity and density (v.x,v.y,v.z,rhop) at half time step
 			   Real4 *velxcor, // input: velocity correction for xsph variant
 			   Real4 *ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
 			   uint numParticles)
@@ -1000,13 +1000,11 @@ namespace gpusph
     		Real3 pos = make_Real3(pospres[index].x, pospres[index].y, pospres[index].z);
 			Real3 vel = make_Real3(velrhop[index].x, velrhop[index].y, velrhop[index].z);
 			Real3 velcorr = make_Real3(velxcor[index].x, velxcor[index].y, velxcor[index].z);
+//			Real3 velcorr = make_Real3(0.0,0.0,0.0);
 			Real rhop = velrhop[index].w;
 			Real rhopPre;
 			Real3 velPre;
 			Real3 posPre;
-//			Real3 posPre = make_Real3(pospres_Pre[index].x, pospres_Pre[index].y, pospres_Pre[index].z);
-//			Real3 velPre = make_Real3(velrhop_Pre[index].x, velrhop_Pre[index].y, velrhop_Pre[index].z);
-//			Real rhopPre = velrhop_Pre[index].w;
 
 			Real3 dvdt = make_Real3(ace_drhodt[index].x,ace_drhodt[index].y,ace_drhodt[index].z);
 			Real drhodt = ace_drhodt[index].w;
