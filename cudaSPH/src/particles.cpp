@@ -48,7 +48,7 @@ Real timestep = 1.0e-5;
 Real save_interval;
 Real print_interval;
 Real simulation_duration;
-
+uint filterStep;
 ParticleSystem *psystem = 0;
 StopWatchInterface *timer = NULL;
 
@@ -70,6 +70,7 @@ void initParticleSystem(const char *cfgFileName, const char *meshFileName)
     save_interval = psystem ->getSaveInterval();
     print_interval = psystem ->getPrintInterval();
     simulation_duration = psystem ->getSimulationDuration();
+    filterStep = psystem ->getSheppardStep();
     sdkCreateTimer(&timer);
 }
 
@@ -82,10 +83,11 @@ void runCase(char *exec_path)
 {
     printf("Run %u particles simulation for %f seconds...\n", numParticles, simulation_duration);
     printf("Save interval: %e seconds...\n",save_interval);
-    printf("Printscreen interval: %e seconds...\n\n",print_interval);
+    printf("Printscreen interval: %e seconds...\n",print_interval);
+    printf("Sheppard Fliter: Every %d iterations \n\n",filterStep);
     cudaDeviceSynchronize();
     sdkStartTimer(&timer);
-    int iteration = 1;
+    uint iteration = 1;
     int part = 1;
     int print = 1;
     Real current_time = 0.0;
@@ -100,6 +102,8 @@ void runCase(char *exec_path)
 
     while (current_time < simulation_duration)
     {
+
+//	for(uint step = 0;step<10;step++){
         psystem->update(timestep);
         current_time = current_time + timestep;
         if(current_time - save_interval*(part - 1) >= save_interval )
@@ -120,12 +124,13 @@ void runCase(char *exec_path)
         	print++;
         }
 
-//        if(!(iteration%filterStep)){
+
+//        if(!(iteration%30)){
 //        	psystem->apply_sheppard_filter();
 //        }
 
         iteration++;
-    }
+    }//end while loop
 
     snprintf(buffer, sizeof(char) * 32, "PART_%04i.dat", part);
     psystem->dumpParticles(0,psystem->getNumParticles(),current_time,buffer);

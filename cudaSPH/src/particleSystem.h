@@ -48,7 +48,7 @@ class ParticleSystem
         Real getSaveInterval() {return h_exec_params_.save_interval;}
         Real getPrintInterval() {return h_exec_params_.print_interval;}
         Real getSimulationDuration() {return h_exec_params_.simulation_duration;}
-
+        uint getSheppardStep(){return h_exec_params_.density_renormalization_frequency;}
 //        Real get_time_step();
 
     protected: // methods

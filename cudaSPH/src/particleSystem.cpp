@@ -198,8 +198,8 @@ Real
 ParticleSystem::update(Real &deltaTime)
 {
     assert(initialized_);
-    deltaTime = h_simulation_params_.cfl_number * h_simulation_params_.smoothing_length/h_simulation_params_.cs0;
-//    deltaTime = 1.0e-5;
+//    deltaTime = h_simulation_params_.cfl_number * h_simulation_params_.smoothing_length/h_simulation_params_.cs0;
+    deltaTime = 3.0e-4;
     h_exec_params_.fixed_dt = deltaTime;
 
     // update constants
@@ -261,11 +261,11 @@ ParticleSystem::update(Real &deltaTime)
 			h_simulation_params_.num_particles,
 			h_domain_params_.num_cells);
 
-//		gpusph::copyArrayFromDevice(h_cell_start_, d_cell_start_, 0, sizeof(uint)*h_numGridCells_);
-//		gpusph::copyArrayFromDevice(h_cell_end_,d_cell_end_,0,sizeof(uint)*h_numGridCells_);
+//		gpusph::copyArrayFromDevice(h_cell_start_, d_cell_start_, 0, sizeof(uint)*h_domain_params_.num_cells);
+//		gpusph::copyArrayFromDevice(h_cell_end_,d_cell_end_,0,sizeof(uint)*h_domain_params_.num_cells);
 //
 //		pFile = fopen ("gpu_cellData.asc","w");
-//		for (uint i=0; i<h_numGridCells_; i++)
+//		for (uint i=0; i<h_domain_params_.num_cells; i++)
 //		{
 //			fprintf(pFile,"%d %d\n", h_cell_start_[i],h_cell_end_[i]);
 //		}
@@ -273,12 +273,12 @@ ParticleSystem::update(Real &deltaTime)
 //
 //		gpusph::copyArrayFromDevice(h_pospres_, d_sorted_pospres_, 0, sizeof(Real)*4*numParticles_);
 //		gpusph::copyArrayFromDevice(h_velrhop_, d_sorted_velrhop_, 0, sizeof(Real)*4*numParticles_);
-//		gpusph::copyArrayFromDevice(h_particle_type_, d_sorted_type_, 0, sizeof(uint)*numParticles_);
+//		gpusph::copyArrayFromDevice(h_particle_index_, d_particle_index_, 0, sizeof(uint)*numParticles_);
 //
 //		pFile = fopen ("gpu_sortedData.asc","w");
 //
 //		Real x,y,z,u,v,w,rho_temp,p_temp;
-//		uint type_temp;
+//		uint index_temp;
 //
 //		for( uint i = 0; i < h_simulation_params_.num_particles; i++)
 //			{
@@ -292,8 +292,8 @@ ParticleSystem::update(Real &deltaTime)
 //				w = h_velrhop_[4*i+2];
 //				rho_temp = h_velrhop_[4*i+3];
 //
-//				type_temp = h_particle_type_[i];
-//				fprintf(pFile,"%f %f %f %f %f %f %f %f %d \n", x,y,z,u,v,w,rho_temp,p_temp,type_temp);
+//				index_temp = h_particle_index_[i];
+//				fprintf(pFile,"%17.16e %17.16e %17.16e %17.16e %17.16e %17.16e %17.16e %17.16e %d \n", x,y,z,u,v,w,rho_temp,p_temp,index_temp);
 //
 //
 //			}
@@ -321,7 +321,8 @@ ParticleSystem::update(Real &deltaTime)
 							 d_visc_dt_,
 							 h_simulation_params_.num_particles,
 							 h_domain_params_.num_cells,
-							 d_neighbors_);
+							 d_neighbors_,
+							 d_particle_hash_);
 
 //		gpusph::copyArrayFromDevice(h_particle_type_, d_neighbors_, 0, sizeof(uint)*numParticles_);
 //		pFile = fopen ("gpu_neighbors.asc","w");
@@ -336,15 +337,15 @@ ParticleSystem::update(Real &deltaTime)
 //		deltaTime = get_time_step(d_visc_dt_,numParticles_);
 
 		// zero out acceleration of stationary particles.
-		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
+//		gpusph::zero_acceleration(d_ace_drho_dt_,numParticles_);
 
 		// zero out y-component of data for 2D simulations
-		if(h_exec_params_.simulation_dimension == TWO_D)
-			{
-				gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
-				gpusph::zero_ycomponent(d_velxcor_,numParticles_);
-			}
-//
+//		if(h_exec_params_.simulation_dimension == TWO_D)
+//			{
+//				gpusph::zero_ycomponent(d_ace_drho_dt_,numParticles_);
+//				gpusph::zero_ycomponent(d_velxcor_,numParticles_);
+//			}
+
 //		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
 //
 //		pFile = fopen ("gpu_aceData.asc","w");
@@ -368,7 +369,7 @@ ParticleSystem::update(Real &deltaTime)
 			d_velxcor_,
 			d_ace_drho_dt_,
 			h_simulation_params_.num_particles);
-//
+
 //		gpusph::copyArrayFromDevice(h_pospres_, d_pospres_pre_, 0, sizeof(Real)*4*numParticles_);
 //		gpusph::copyArrayFromDevice(h_velrhop_, d_velrhop_pre_, 0, sizeof(Real)*4*numParticles_);
 //
@@ -384,7 +385,7 @@ ParticleSystem::update(Real &deltaTime)
 //					w = h_velrhop_[4*i+2];
 //					rho_temp = h_velrhop_[4*i+3];
 //
-//					fprintf(pFile,"%17.16e %17.16e %17.16e %17.16e %17.16e %17.16e %17.16e \n", x,y,z,u,v,w,rho_temp);
+//					fprintf(pFile,"%17.16e %17.16e %17.16e %17.16e %17.16e %17.16e %17.16e\n", x,y,z,u,v,w,rho_temp);
 //
 //
 //				}
@@ -442,7 +443,8 @@ ParticleSystem::update(Real &deltaTime)
 							 d_visc_dt_,
 							 numParticles_,
 							 h_domain_params_.num_cells,
-							 d_neighbors_);
+							 d_neighbors_,
+							 d_particle_hash_);
 
 
 //		gpusph::copyArrayFromDevice(h_particle_type_, d_neighbors_, 0, sizeof(uint)*numParticles_);
@@ -478,7 +480,7 @@ ParticleSystem::update(Real &deltaTime)
 			gpusph::zero_ycomponent(d_velxcor_,numParticles_);
 		}
 
-//
+
 //		gpusph::copyArrayFromDevice(h_pospres_, d_ace_drho_dt_, 0, sizeof(Real)*4*numParticles_);
 //
 //		pFile = fopen ("gpu_correctorAceData.asc","w");
@@ -519,13 +521,6 @@ ParticleSystem::update(Real &deltaTime)
 //
 //				}
 //		fclose(pFile);
-
-		// evaluate new pressures.
-		gpusph::pre_interaction(d_ace_drho_dt_,
-						d_velrhop_,
-						d_pospres_,
-						d_visc_dt_,
-						numParticles_);
     }
 
     return deltaTime;
@@ -577,6 +572,7 @@ ParticleSystem::apply_sheppard_filter()
 
 	// process particle interactions
 	gpusph::sheppard_density_filter(d_velrhop_,
+									d_pospres_,
 									d_sorted_velrhop_,
 									d_sorted_pospres_,
 									d_particle_index_,
@@ -749,6 +745,7 @@ ParticleSystem::loadCfg(const char *fileName)
 		hRoot = TiXmlHandle(pElem);
 	}
 
+#if(USE_PRECISION)
 	// block: definition
 	{
 
@@ -867,7 +864,127 @@ ParticleSystem::loadCfg(const char *fileName)
 			}
 		}
 	}
+#else
 
+	// block: definition
+	{
+
+		pElem = hRoot.FirstChild( "casedef" ).FirstChild( "geometry" ).FirstChild( "definition" ).Element();
+		pElem = pElem -> FirstChildElement();
+		for (pElem; pElem; pElem = pElem -> NextSiblingElement())
+		{
+			if (!strcmp("pointmin",pElem->Value()))
+			{
+				pElem ->QueryFloatAttribute("x", &h_domain_params_.world_origin.x);
+				pElem ->QueryFloatAttribute("y", &h_domain_params_.world_origin.y);
+				pElem ->QueryFloatAttribute("z", &h_domain_params_.world_origin.z);
+			}
+			else if (!strcmp("pointmax",pElem->Value()))
+			{
+				pElem ->QueryFloatAttribute("x", &h_domain_params_.world_limits.x);
+				pElem ->QueryFloatAttribute("y", &h_domain_params_.world_limits.y);
+				pElem ->QueryFloatAttribute("z", &h_domain_params_.world_limits.z);
+			}
+
+		}
+	}
+
+	// block: execution
+	{
+		TiXmlElement *child;
+		const char *key;
+		double value;
+		pElem = hRoot.FirstChild( "execution").Element();
+
+		// parameters
+		child = pElem -> FirstChildElement("parameters")->FirstChildElement();
+		for(child;child;child = child -> NextSiblingElement())
+		{
+			key = child ->Attribute("key");
+			if(!strcmp(key,"Visco"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.nu);
+			}
+
+			if(!strcmp(key,"ShepardSteps"))
+			{
+				child ->QueryUnsignedAttribute("value", &h_exec_params_.density_renormalization_frequency);
+			}
+
+			if(!strcmp(key,"TimeMax"))
+			{
+				child ->QueryFloatAttribute("value", &h_exec_params_.simulation_duration);
+			}
+
+			if(!strcmp(key,"TimeOut"))
+			{
+				child ->QueryFloatAttribute("value", &h_exec_params_.save_interval);
+			}
+		}
+
+		// particles
+		child = pElem -> FirstChildElement("particles");
+		child ->QueryUnsignedAttribute("np", &h_simulation_params_.num_particles);
+		child ->QueryUnsignedAttribute("nb", &h_simulation_params_.num_boundary_particles);
+
+		// constants
+		child = pElem -> FirstChildElement("constants")->FirstChildElement();
+		for(child;child;child = child -> NextSiblingElement())
+		{
+
+			key = child -> Value();
+
+			if(!strcmp(key,"gravity"))
+			{
+				child ->QueryFloatAttribute("x", &h_simulation_params_.gravity.x);
+				child ->QueryFloatAttribute("y", &h_simulation_params_.gravity.y);
+				child ->QueryFloatAttribute("z", &h_simulation_params_.gravity.z);
+			}
+			if(!strcmp(key,"cflnumber"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.cfl_number);
+			}
+			if(!strcmp(key,"gamma"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.gamma);
+			}
+			if(!strcmp(key,"rhop0"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.rhop0);
+			}
+			if(!strcmp(key,"eps"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.eps);
+
+			}
+			if(!strcmp(key,"dp"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.dp);
+
+			}
+			if(!strcmp(key,"h"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.smoothing_length);
+
+			}
+			if(!strcmp(key,"b"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.b_coeff);
+
+			}
+			if(!strcmp(key,"massbound"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.boundary_mass);
+
+			}
+			if(!strcmp(key,"massfluid"))
+			{
+				child ->QueryFloatAttribute("value", &h_simulation_params_.fluid_mass);
+
+			}
+		}
+	}
+#endif
 	setDerivedInputs();
 
 } //end ParticleSystem::loadCfg()
@@ -877,12 +994,10 @@ ParticleSystem::setDerivedInputs()
 {
 	// Domain Parameters
 	{
-		h_domain_params_.world_size.x = h_domain_params_.world_limits.x - h_domain_params_.world_origin.x;
-		h_domain_params_.world_size.y = h_domain_params_.world_limits.y - h_domain_params_.world_origin.y;
-		h_domain_params_.world_size.z = h_domain_params_.world_limits.z - h_domain_params_.world_origin.z;
-
 		h_domain_params_.domainMin = h_domain_params_.world_origin - 0.1 * h_simulation_params_.smoothing_length;
-		h_domain_params_.domainMax = h_domain_params_.world_origin + h_domain_params_.world_size + 0.1 * h_simulation_params_.smoothing_length;
+		h_domain_params_.domainMax = h_domain_params_.world_limits + 0.1 * h_simulation_params_.smoothing_length;
+
+		h_domain_params_.world_size = h_domain_params_.domainMax - h_domain_params_.domainMin;
 
 		Real cellSize = 2.0 * h_simulation_params_.smoothing_length;  // cell size equal to 2*particle smoothing length
 		h_domain_params_.cell_size = make_Real3(cellSize, cellSize, cellSize); // uniform grid spacing
@@ -897,7 +1012,8 @@ ParticleSystem::setDerivedInputs()
 	// Simulation Parameters
 	{
 		h_simulation_params_.num_fluid_particles = h_simulation_params_.num_particles - h_simulation_params_.num_boundary_particles;
-		h_simulation_params_.epsilon = 1e-3;
+		h_simulation_params_.epsilon = 0.1 * h_simulation_params_.smoothing_length;
+		h_simulation_params_.epsilon = h_simulation_params_.epsilon * h_simulation_params_.epsilon;
 		h_simulation_params_.pi = 3.14159265358979323846;
 		h_simulation_params_.over_rhop0 = 1.0 / h_simulation_params_.rhop0;
 		h_simulation_params_.over_smoothing_length = 1.0 / h_simulation_params_.smoothing_length;
@@ -924,15 +1040,14 @@ ParticleSystem::setDerivedInputs()
     if(h_exec_params_.simulation_dimension == TWO_D)
     {
     	h_simulation_params_.wendland_a1 = 7.0/(4.0 * h_simulation_params_.pi * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
-    	h_simulation_params_.wendland_a2 = -2.7852/(h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
-    	h_simulation_params_.sheppard = h_simulation_params_.wendland_a1;
     }
     else
     {
     	h_simulation_params_.wendland_a1 = 21.0/(16.0 * h_simulation_params_.pi * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
-		h_simulation_params_.wendland_a2 = -2.08891/(h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length * h_simulation_params_.smoothing_length);
-		h_simulation_params_.sheppard = h_simulation_params_.wendland_a1;
     }
+
+    h_simulation_params_.wendland_a2 = -5.0 * h_simulation_params_.over_smoothing_length * h_simulation_params_.wendland_a1;
+    h_simulation_params_.sheppard = h_simulation_params_.wendland_a1;
 
     // Save parameters to gpu memory
     gpusph::set_domain_parameters(&h_domain_params_);

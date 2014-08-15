@@ -255,7 +255,8 @@ namespace gpusph
                  Real  *viscdt,
                  uint   numParticles,
                  uint   numCells,
-                 uint  *neighbors)
+                 uint  *neighbors,
+                 uint *gridParticleHash)
     {
 #if USE_TEX
         checkCudaErrors(cudaBindTexture(0, oldPosTex, sorted_pospres, numParticles*sizeof(Real4)));
@@ -279,7 +280,8 @@ namespace gpusph
 																   sorted_type,
 																   viscdt,
 																   numParticles,
-																   neighbors);
+																   neighbors,
+																   gridParticleHash);
 
         // check if kernel invocation generated an error
         getLastCudaError("Kernel execution failed");
@@ -295,7 +297,7 @@ namespace gpusph
 
     void sortParticles(uint *dGridParticleHash, uint *dGridParticleIndex, uint numParticles)
     {
-        thrust::sort_by_key(thrust::device_ptr<uint>(dGridParticleHash),
+        thrust::stable_sort_by_key(thrust::device_ptr<uint>(dGridParticleHash),
                             thrust::device_ptr<uint>(dGridParticleHash + numParticles),
                             thrust::device_ptr<uint>(dGridParticleIndex));
     }
@@ -350,6 +352,7 @@ namespace gpusph
 		getLastCudaError("Kernel execution failed");
     }
     void sheppard_density_filter(Real *velrhop,
+    								Real *pospres,
     								 Real *sorted_velrhop,
     								 Real *sorted_pospres,
     								 uint *gridParticleIndex, // input: sorted particle indicies
@@ -365,6 +368,7 @@ namespace gpusph
 
     // execute the kernel
     sheppard_density_filterD<<< numBlocks, numThreads >>>((Real4 *) velrhop,
+    													   (Real4 *) pospres,
 														   (Real4 *) sorted_velrhop,
 														   (Real4 *) sorted_pospres,
 														   gridParticleIndex,
@@ -396,7 +400,8 @@ namespace gpusph
     __device__ uint calcGridHash(int3 gridPos)
     {
 
-    	return gridPos.z*domain_params.grid_size.y*domain_params.grid_size.x + gridPos.y*domain_params.grid_size.x + gridPos.x;
+    	return __umul24(__umul24(gridPos.z,domain_params.grid_size.y),domain_params.grid_size.x)
+    			+ __umul24(gridPos.y,domain_params.grid_size.x) + gridPos.x;
     }
 
     // calculate grid hash value for each particle
@@ -454,7 +459,7 @@ namespace gpusph
             // two hash values per thread
             sharedHash[threadIdx.x+1] = hash;
 
-            if (index > 0 && threadIdx.x == 0)
+            if (index && !threadIdx.x)
             {
                 // first thread in block must load neighbor particle hash
                 sharedHash[0] = gridParticleHash[index-1];
@@ -463,32 +468,18 @@ namespace gpusph
 
         __syncthreads();
 
-        if (index < numParticles)
-        {
-            // If this particle has a different cell index to the previous
-            // particle then it must be the first particle in the cell,
-            // so store the index of this particle in the cell.
-            // As it isn't the first particle, it must also be the cell end of
-            // the previous particle's cell
-
-            if (index == 0 || hash != sharedHash[threadIdx.x])
-            {
-                cellStart[hash] = index;
-
-                if (index > 0)
-                    cellEnd[sharedHash[threadIdx.x]] = index;
+          if(index < numParticles){
+            if(!index || hash != sharedHash[threadIdx.x]){
+              cellStart[hash] = index;
+              if(index)cellEnd[sharedHash[threadIdx.x]] = index;
             }
-
-            if (index == numParticles - 1)
-            {
-                cellEnd[hash] = index + 1;
-            }
+            if(index == numParticles - 1) cellEnd[hash] = index + 1;
 
             // Now use the sorted index to reorder the pos and vel data
-            uint sortedIndex = gridParticleIndex[index];
-            Real4 pos = FETCH(oldPos, sortedIndex);       // macro does either global read or texture fetch
-            Real4 vel = FETCH(oldVel, sortedIndex);       // see particles_kernel.cuh
-            uint p_type = FETCH(oldType, sortedIndex);
+            uint originalIndex = gridParticleIndex[index];
+            Real4 pos = oldPos[originalIndex];
+            Real4 vel = oldVel[originalIndex];
+            uint p_type = oldType[originalIndex];
 
             sortedPos[index] = pos;
             sortedVel[index] = vel;
@@ -501,53 +492,39 @@ namespace gpusph
     __device__
     void particle_particle_interaction(Real4 pospres1, Real4 velrhop1, Real massp1,
     								   Real4 pospres2, Real4 velrhop2, Real massp2,
-    								   Real3 &acep1, Real &arp1, Real &visc, uint &neigh1, Real3 &vcor)
+    								   Real3 &acep1, Real &arp1, Real &visc, uint &neigh1, Real3 &vcor, uint j_index)
     {
 
     	Real drx = pospres1.x - pospres2.x;
     	Real dry = pospres1.y - pospres2.y;
     	Real drz = pospres1.z - pospres2.z;
-    	const Real dvx = velrhop1.x - velrhop2.x, dvy =  velrhop1.y - velrhop2.y, dvz =  velrhop1.z - velrhop2.z;
+
     	Real rr2 = drx*drx + dry*dry + drz*drz;
 
-    	if(rr2<=sim_params.four_h_squared && rr2 >=1e-18)
+    	if(rr2 < sim_params.four_h_squared && rr2 > 1e-18)
     	{
     		//Add to particle neighbor count
-    		neigh1 += 1;
-    		const Real prrhop2 = pospres2.w/(velrhop2.w * velrhop2.w);
+    		neigh1 += j_index;
     		const Real prrhop1 = pospres1.w/(velrhop1.w * velrhop1.w);
-    		Real prs = prrhop1 + prrhop2;
-
-    		Real wab,frx,fry,frz;
-
+    		const Real prrhop2 = pospres2.w/(velrhop2.w * velrhop2.w);
+    		Real prs = -(prrhop1 + prrhop2);
+    		const Real dvx = velrhop1.x - velrhop2.x, dvy =  velrhop1.y - velrhop2.y, dvz =  velrhop1.z - velrhop2.z;
+    		Real wab,fac;
+    		Real robar = ( velrhop1.w + velrhop2.w ) * 0.5;
+			Real pi_visc = 0.0;
+			const Real dot=drx*dvx + dry*dvy + drz*dvz;
 
     		{//====== Kernel =====
     			const Real rad=sqrt(rr2);
     			const Real qq=rad * sim_params.over_smoothing_length;
-    			Real fac;
-
     			const Real wqq = 2.0 * qq + 1.0;
     			const Real wqq1 = 1.0 - 0.5 * qq;
     			const Real wqq2 = wqq1 * wqq1;
     			wab = sim_params.wendland_a1 * wqq * wqq2 * wqq2;
     			fac = sim_params.wendland_a2 * qq * wqq2 * wqq1/rad;
 
-    			frx = fac * drx; fry = fac * dry; frz = fac * drz;
     		}
 
-    		{// Acceleration
-    			const Real p_vpm = -prs * massp2;
-    			acep1.x += p_vpm * frx; acep1.y += p_vpm * fry; acep1.z += p_vpm * frz;
-    		}
-
-    		{// Density Derivative
-
-    			arp1 += massp2 * (dvx * frx + dvy * fry + dvz * frz);
-    		}
-
-    		const Real csoun1 = velrhop1.w * sim_params.over_rhop0;
-    		const Real csoun2 = velrhop2.w * sim_params.over_rhop0;
-    	    const Real cbar=(sim_params.cs0 * (csoun1 * csoun1 * csoun1)+ sim_params.cs0 *(csoun2 * csoun2 * csoun2) ) * 0.5;
 
     	    //===== DeltaSPH =====
     //	    if(tdelta==DELTA_DBC || tdelta==DELTA_DBCExt)
@@ -559,21 +536,24 @@ namespace gpusph
     //			deltap1=(bound? FLT_MAX: deltap1+delta);
     //	    }
 
-    	    Real robar = ( velrhop1.w + velrhop2.w ) * 0.5;
 
-    	    {//===== Viscosity =====
-    			const Real dot=drx*dvx + dry*dvy + drz*dvz;
-    			const Real dot_rr2=dot/(rr2 + sim_params.epsilon);
-    			//-Artificial viscosity.
-    	//		if(tvisco==VISCO_Artificial && dot<0)
+
+    	    {//-Artificial viscosity.
+
     			if( dot < 0.0 )
     			{
-    			  const Real amubar = sim_params.smoothing_length * dot_rr2;
-    			  const Real pi_visc = (-sim_params.nu * cbar * amubar / robar) * massp2;
-    			  acep1.x-= pi_visc * frx; acep1.y-=pi_visc*fry; acep1.z-=pi_visc*frz;
+
+    	    	    const Real csoun1 = velrhop1.w * sim_params.over_rhop0;
+					const Real csoun2 = velrhop2.w * sim_params.over_rhop0;
+					const Real cbar= sim_params.cs0 * ((csoun1 * csoun1 * csoun1)+ (csoun2 * csoun2 * csoun2) ) * 0.5;
+
+					const Real mu = sim_params.smoothing_length * dot/(rr2 + sim_params.epsilon);
+
+					pi_visc = (-sim_params.nu * cbar * mu / robar);
+
     			}
 
-    			visc=max(dot_rr2,visc);  //ViscDt=max(dot/(rr2+Eta2),ViscDt); // <----- Reduction to only one value. Used for adaptive time stepping.
+    			//visc=max(dot_rr2,visc);  //ViscDt=max(dot/(rr2+Eta2),ViscDt); // <----- Reduction to only one value. Used for adaptive time stepping.
     	     }
 
     	    //===== XSPH correction =====
@@ -584,11 +564,25 @@ namespace gpusph
 				vcor.z-=wab_rhobar * dvz;
 			  }
 
+
+			{// Density Derivative
+
+				arp1 += massp2 * fac * dot;
+			}
+
+    		{// Acceleration
+
+    			acep1.x += massp2 * (prs - pi_visc) * fac * drx;
+    			acep1.y += massp2 * (prs - pi_visc) * fac * dry;
+    			acep1.z += massp2 * (prs - pi_visc) * fac * drz;
+
+    		}
+
     	}
     }
 
     __device__
-    void interact_with_cell(int3 gridPos, //
+    void interact_with_cell(uint gridHash, //
     						uint index, // index of particle i
     						Real  massp1, // mass of particle i
     						uint   *type, // Ordered particle type data for all particles
@@ -596,38 +590,42 @@ namespace gpusph
     						Real4 velrhop1, // velocity and density of particle i
     						Real4 *pospres, // Ordered position and pressure data for all particles
     						Real4 *velrhop, // Ordered velocity and density data for all particles
-    						Real4 *ace_drhodt, // Need to fix this term
+    						Real4 *ace_drhodt, //
     						Real3 &acep1, // Acceleration accumulator for particle i
     						Real &arp1, // Density derivative accumulator for particle i
     						Real  &visc, // Max dt for particle i based on viscous considerations
     						uint *cellStart, // Index of 1st particle in each grid cell
     						uint *cellEnd,
     						uint &neigh1,
-    						Real3 &vcor) // Index of last particle in each grid cell
+    						Real3 &vcor,
+    						uint *gridParticleIndex) // Index of last particle in each grid cell
     {
 
 
-    	uint gridHash = calcGridHash(gridPos);
+//    	uint gridHash = calcGridHash(gridPos);
+
     	Real massp2;
 
     	// get start of bucket for this cell
-    	uint startIndex = FETCH(cellStart, gridHash);
+    	uint startIndex = cellStart[gridHash];
 
     	if (startIndex != 0xffffffff)          // cell is not empty
+
     	{
 
     		// iterate over particles in this cell
-    		uint endIndex = FETCH(cellEnd, gridHash);
+    		uint endIndex = cellEnd[gridHash];
 
     		for (uint j=startIndex; j<endIndex; j++)
     		{
     			if (j != index)                // check not interacting with self
     			{
 
-    				Real4 pospres2 = FETCH(pospres,j);
-    				Real4 velrhop2 = FETCH(velrhop,j);
+    				uint j_index = gridParticleIndex[j];
+    				Real4 pospres2 = pospres[j];
+    				Real4 velrhop2 = velrhop[j];
 
-    				uint type2 = FETCH(type,j);
+    				uint type2 = type[j];
 
     				if(type2 == FLUID)
     				{
@@ -643,7 +641,7 @@ namespace gpusph
     				// collide two particles
     				particle_particle_interaction(pospres1, velrhop1, massp1,
     											  pospres2, velrhop2, massp2,
-    											  acep1, arp1, visc,neigh1,vcor);
+    											  acep1, arp1, visc,neigh1,vcor,j_index);
 
 
     			}
@@ -664,7 +662,8 @@ namespace gpusph
     								   uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
     								   Real *viscdt, // output: max time step for adaptive time stepping
     								   uint numParticles,
-    								   uint *neighbors)
+    								   uint *neighbors,
+    								   uint *gridParticleHash)
 
     {
         uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
@@ -673,12 +672,13 @@ namespace gpusph
         {
 
         // read particle data from sorted arrays
-        Real4 pospres1 = FETCH(pospres,index);
-        Real4 velrhop1 = FETCH(velrhop,index);
-        Real4 ace_drhodt1 = FETCH(ace_drhodt,index); // *This is not sorted, need to work this out.
-        Real massp1;
+        Real4 pospres1 =pospres[index];
+        Real4 velrhop1 = velrhop[index];
 
-        if (FETCH(type,index) == FLUID)
+        Real massp1,massp2;
+        uint hash1 = gridParticleHash[index];
+
+        if (type[index] == FLUID)
         {
         	massp1 = sim_params.fluid_mass;
 
@@ -691,28 +691,35 @@ namespace gpusph
         Real  visc = 0.0; // Holds max dt value based on viscous considerations
 
         // get address in grid
-        Real3 pos = make_Real3(pospres1.x,pospres1.y,pospres1.z);
-        int3 gridPos = calcGridPos(pos);
+        int3 gridPos;
+        gridPos.x = hash1%domain_params.grid_size.x;
+        gridPos.z = int(hash1/(domain_params.grid_size.x*domain_params.grid_size.y));
+        gridPos.y = int((hash1%(domain_params.grid_size.x*domain_params.grid_size.y))/domain_params.grid_size.x);
+
+        int cxini = gridPos.x - min(gridPos.x,1);
+        int cxfin = gridPos.x + min(domain_params.grid_size.x - gridPos.x - 1,1) + 1;
+        int yini = gridPos.y - min(gridPos.y,1);
+        int yfin = gridPos.y + min(domain_params.grid_size.y - gridPos.y - 1,1) + 1;
+        int zini = gridPos.z - min(gridPos.z,1);
+        int zfin = gridPos.z + min(domain_params.grid_size.y - gridPos.z - 1,1) + 1;
 
         // examine neighboring cells
-        Real3 acep1 = make_Real3(ace_drhodt1); // Acceleration accumulator for particle(index)
+        Real3 acep1 = make_Real3(sim_params.gravity.x,sim_params.gravity.y,sim_params.gravity.z); // Acceleration accumulator for particle(index)
         Real3 velcorr1 = make_Real3(0.0, 0.0, 0.0); // Velocity correction accumulator for particle(index)
         Real  arp1 = 0.0; // drho_dt accumulator for particle(index)
         uint  neigh1 = 0; // neighbor accumulator
 
-        for (int z=-1; z<=1; z++)
+        for (int z=zini; z<zfin; z++)
         {
-            for (int y=-1; y<=1; y++)
+            for (int y=yini; y<yfin; y++)
             {
-                for (int x=-1; x<=1; x++)
+                for (int x=cxini; x<cxfin; x++)
                 {
-                    int3 neighbourPos = gridPos + make_int3(x, y, z);
+                    int3 neighbourPos = make_int3(x, y, z);
 
-                    // Check to see if cell exists
-                    if(cellExists(neighbourPos))
-                    {
+                    uint hash2 = calcGridHash(neighbourPos);
 
-                    	interact_with_cell(neighbourPos,
+                    	interact_with_cell(hash2,
                     					   index,
                     					   massp1,
                     					   type,
@@ -727,9 +734,10 @@ namespace gpusph
                     					   cellStart,
                     					   cellEnd,
                     					   neigh1,
-                    					   velcorr1);
+                    					   velcorr1,
+                    					   gridParticleIndex);
 
-                    }
+
                 }
             }
         }
@@ -737,10 +745,10 @@ namespace gpusph
         // write accelerations back to original unsorted location
         uint originalIndex = gridParticleIndex[index];
         ace_drhodt[originalIndex] = make_Real4(acep1,arp1);
-        velxcor[originalIndex] = make_Real4(0.0, 0.0, 0.0,0.0);
+//        velxcor[originalIndex] = make_Real4(0.0, 0.0, 0.0,0.0);
         velxcor[originalIndex] = make_Real4(velcorr1,0.0);
         viscdt[originalIndex] = visc;
-        neighbors[index] = neigh1;
+        neighbors[originalIndex] = neigh1;
     }
     }
 
@@ -756,13 +764,9 @@ namespace gpusph
 
         if (index >= numParticles) return;
 
-        ace_drhodt[index].x = sim_params.gravity.x; ace_drhodt[index].y = sim_params.gravity.y; ace_drhodt[index].z = sim_params.gravity.z; ace_drhodt[index].w = 0.0; // initialize acceleration accumulators to zero
+//        ace_drhodt[index].x = sim_params.gravity.x; ace_drhodt[index].y = sim_params.gravity.y; ace_drhodt[index].z = sim_params.gravity.z; ace_drhodt[index].w = 0.0; // initialize acceleration accumulators to zero
         viscdt[index] = 0.0; // initialize viscous time step tracker to zero
-        Real4 pospres1 = FETCH(pospres,index);
-        Real4 velrhop1 = FETCH(velrhop,index);
 
-        pospres1.w = sim_params.b_coeff * ( pow(velrhop1.w * sim_params.over_rhop0,sim_params.gamma) - 1.0 ); // Compute particle pressure using Tait EOS
-        pospres[index].w = pospres1.w;
     }
 
     __global__
@@ -828,6 +832,7 @@ namespace gpusph
 
     __global__
      void sheppard_density_filterD(Real4 *velrhop, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+    		 	 	 	 	 	   	   Real4 *pospres, // output: new pressures
      								   Real4 *sorted_velrhop, // input: sorted velocity and density (v.x,v.y,v.z,rhop)
      								   Real4 *sorted_pospres, // input: sorted particle positions and pressures
      								   uint *gridParticleIndex, // input: sorted particle indicies
@@ -891,15 +896,12 @@ namespace gpusph
 		if(type1 == FLUID)
 		{
 			massp1 = sim_params.fluid_mass;
+			Real rvol = massp1/rhop1;
+			// Compute new density, along with contribution from the particle itself
+			rhop1 = ((sum_W + sim_params.sheppard)*massp1)/(sum_mass_W + sim_params.sheppard*rvol);
+			velrhop[originalIndex].w = rhop1;
+			pospres[originalIndex].w = sim_params.b_coeff * ( pow(rhop1 * sim_params.over_rhop0,sim_params.gamma) - 1.0 ); // Compute particle pressure using Tait EOS
 		}
-		else
-		{
-			massp1 = sim_params.boundary_mass;
-		}
-
-		Real rvol = massp1/rhop1;
-		// Compute new density, along with contribution from the particle itself
-		velrhop[originalIndex].w = ((sum_W + sim_params.sheppard)*massp1)/(sum_mass_W + sim_params.sheppard*rvol);
      }
      }
 
@@ -994,40 +996,39 @@ namespace gpusph
 			   uint numParticles)
     {
     	uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
+    	Real dt = 0.5 * exec_params.fixed_dt;
     	if (index < numParticles)
     	{
-    		Real dt = exec_params.fixed_dt;
-    		Real3 pos = make_Real3(pospres[index].x, pospres[index].y, pospres[index].z);
-			Real3 vel = make_Real3(velrhop[index].x, velrhop[index].y, velrhop[index].z);
-			Real3 velcorr = make_Real3(velxcor[index].x, velxcor[index].y, velxcor[index].z);
-//			Real3 velcorr = make_Real3(0.0,0.0,0.0);
-			Real rhop = velrhop[index].w;
-			Real rhopPre;
-			Real3 velPre;
-			Real3 posPre;
-
-			Real3 dvdt = make_Real3(ace_drhodt[index].x,ace_drhodt[index].y,ace_drhodt[index].z);
-			Real drhodt = ace_drhodt[index].w;
 
     		if (index < sim_params.num_boundary_particles) // Integrate boundary particle densities forward a half time step
     		{
-    	        rhopPre = rhop + drhodt * 0.5 * dt;
-    	        rhopPre = (rhopPre < sim_params.rhop0? sim_params.rhop0: rhopPre);     //-To prevent absorption of fluid particles by boundaries.
-    	        velPre = vel;
-    	        posPre = pos;
+    			Real rhop = velrhop[index].w;
+    	        rhop += ace_drhodt[index].w * dt;
+    	        velrhop_Pre[index].w = (rhop < sim_params.rhop0? sim_params.rhop0: rhop);     //-To prevent absorption of fluid particles by boundaries.
+    	        pospres_Pre[index] = pospres[index];
+    	        velrhop_Pre[index].x = 0.0; velrhop_Pre[index].y = 0.0; velrhop_Pre[index].z = 0.0;
     	    }
     	    else // Integrate Fluid particles forward a half time step
     	    {
-				rhopPre = rhop + drhodt * 0.5 * dt;
-				velPre.x = vel.x + dvdt.x * 0.5 * dt; velPre.y = vel.y + dvdt.y * 0.5 * dt; velPre.z = vel.z + dvdt.z * 0.5 * dt;
-				posPre.x = pos.x + (vel.x + velcorr.x * sim_params.eps) * 0.5 * dt; posPre.y = pos.y + (vel.y + velcorr.y * sim_params.eps) * 0.5 * dt;
-				posPre.z = pos.z + (vel.z + velcorr.z * sim_params.eps) * 0.5 * dt;
+    	    	Real3 dvdt = make_Real3(ace_drhodt[index].x,ace_drhodt[index].y,ace_drhodt[index].z);
+    	   		Real3 pos = make_Real3(pospres[index].x, pospres[index].y, pospres[index].z);
+				Real3 vel = make_Real3(velrhop[index].x, velrhop[index].y, velrhop[index].z);
+				Real3 velcorr = make_Real3(velxcor[index].x, velxcor[index].y, velxcor[index].z);
+    	    	Real rhop = velrhop[index].w;
+
+				rhop += ace_drhodt[index].w * dt;
+				pos += (vel + velcorr * sim_params.eps) * dt;
+				vel += dvdt * dt;
+
+				pospres_Pre[index].x = pos.x; pospres_Pre[index].y = pos.y; pospres_Pre[index].z = pos.z;
+				velrhop_Pre[index].x = vel.x; velrhop_Pre[index].y = vel.y; velrhop_Pre[index].z = vel.z;
+				velrhop_Pre[index].w = rhop;
+
 //
     	    }
 
-    	      pospres_Pre[index].x = posPre.x; pospres_Pre[index].y = posPre.y; pospres_Pre[index].z = posPre.z;
-    	      velrhop_Pre[index].x = velPre.x; velrhop_Pre[index].y = velPre.y; velrhop_Pre[index].z = velPre.z;
-    	      velrhop_Pre[index].w = rhopPre;
+            pospres_Pre[index].w = sim_params.b_coeff * ( pow(velrhop_Pre[index].w * sim_params.over_rhop0,sim_params.gamma) - 1.0 ); // Compute particle pressure using Tait EOS
+
 
 		}
 
@@ -1043,40 +1044,36 @@ namespace gpusph
      {
 
      	uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
+     	Real dt = exec_params.fixed_dt;
+
      	if (index < numParticles)
      	{
-     		Real dt = exec_params.fixed_dt;
-     		Real3 pos = make_Real3(pospres[index].x, pospres[index].y, pospres[index].z);
- 			Real3 vel = make_Real3(velrhop[index].x, velrhop[index].y, velrhop[index].z);
- 			Real rhop = velrhop[index].w;
-
- 			Real3 posPre = make_Real3(pospres_Pre[index].x, pospres_Pre[index].y, pospres_Pre[index].z);
- 			Real3 velPre = make_Real3(velrhop_Pre[index].x, velrhop_Pre[index].y, velrhop_Pre[index].z);
- 			Real rhopPre = velrhop_Pre[index].w;
-
- 			Real3 dvdt = make_Real3(ace_drhodt[index].x,ace_drhodt[index].y,ace_drhodt[index].z);
- 			Real drhodt = ace_drhodt[index].w;
 
      		if (index < sim_params.num_boundary_particles) // Integrate boundary particle densities forward a half time step
-     		{
-     	        rhopPre = rhop + drhodt * 0.5 * dt;
-     	        rhop = 2.0 * rhopPre - rhop;
-     	        rhop = (rhop < sim_params.rhop0? sim_params.rhop0: rhop);     //-To prevent absorption of fluid particles by boundaries.
-     	    }
-     	    else // Integrate Fluid particles forward a half time step
+			{
+     			Real rhop = velrhop[index].w + dt * ace_drhodt[index].w;
+				velrhop[index].w = (rhop < sim_params.rhop0? sim_params.rhop0: rhop);     //-To prevent absorption of fluid particles by boundaries.
+			}
+
+     		else // Integrate Fluid particles forward a half time step
      	    {
- 				rhopPre = rhop + drhodt * 0.5 * dt;
- 				velPre.x = vel.x + dvdt.x * 0.5 * dt; velPre.y = vel.y + dvdt.y * 0.5 * dt; velPre.z = vel.z + dvdt.z * 0.5 * dt;
- 				posPre.x = pos.x + velPre.x * 0.5 * dt; posPre.y = pos.y + velPre.y * 0.5 * dt; posPre.z = pos.z + velPre.z * 0.5 * dt;
- 				rhop = 2.0 * rhopPre - rhop;
- 				vel.x = 2.0 * velPre.x - vel.x; vel.y = 2.0 * velPre.y - vel.y; vel.z = 2.0 * velPre.z - vel.z;
- 				pos.x = 2.0 * posPre.x - pos.x; pos.y = 2.0 * posPre.y - pos.y; pos.z = 2.0 * posPre.z - pos.z;
 
+				Real3 vel = make_Real3(velrhop[index].x,velrhop[index].y,velrhop[index].z);
+				Real3 pos = make_Real3(pospres[index].x,pospres[index].y,pospres[index].z);
+				Real3 dvdt = make_Real3(ace_drhodt[index].x,ace_drhodt[index].y,ace_drhodt[index].z);
+
+				Real rhop = velrhop[index].w + dt * ace_drhodt[index].w;
+
+				Real3 velpre = make_Real3(velrhop_Pre[index].x,velrhop_Pre[index].y,velrhop_Pre[index].z);
+				vel += dvdt*dt;
+				pos += velpre*dt;
+
+				pospres[index].x = pos.x; pospres[index].y = pos.y; pospres[index].z = pos.z;
+				velrhop[index].x = vel.x; velrhop[index].y = vel.y; velrhop[index].z = vel.z;
+				velrhop[index].w = rhop;
      	    }
 
-     	      pospres[index].x = pos.x; pospres[index].y = pos.y; pospres[index].z = pos.z;
-     	      velrhop[index].x = vel.x; velrhop[index].y = vel.y; velrhop[index].z = vel.z;
-     	      velrhop[index].w = rhop;
+     		pospres[index].w = sim_params.b_coeff * ( pow(velrhop[index].w * sim_params.over_rhop0,sim_params.gamma) - 1.0 ); // Compute particle pressure using Tait EOS
 
  		}
 
