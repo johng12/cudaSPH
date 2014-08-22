@@ -103,8 +103,8 @@ void runCase(char *exec_path)
     while (current_time < simulation_duration)
     {
 
-//	for(uint step = 0;step<10;step++){
-        psystem->update(timestep);
+        timestep = psystem->update();
+
         current_time = current_time + timestep;
         if(current_time - save_interval*(part - 1) >= save_interval )
         {
@@ -125,9 +125,9 @@ void runCase(char *exec_path)
         }
 
 
-//        if(!(iteration%30)){
-//        	psystem->apply_sheppard_filter();
-//        }
+        if(!(iteration%30)){
+        	psystem->apply_sheppard_filter();
+        }
 
         iteration++;
     }//end while loop
@@ -137,9 +137,10 @@ void runCase(char *exec_path)
     cudaDeviceSynchronize();
     sdkStopTimer(&timer);
     Real fAvgSeconds = ((Real)1.0e-3 * (Real)sdkGetTimerValue(&timer)/(Real)iteration);
+    Real cpuTime = (Real)1.0e-3 * (Real)sdkGetTimerValue(&timer);
     psystem ->dumpParameters();
     printf("particles, Throughput = %.4f KParticles/s, Time = %.5f s, Size = %u particles, NumDevsUsed = %u, Workgroup = %u\n",
-           (1.0e-3 * numParticles)/fAvgSeconds, fAvgSeconds, numParticles, 1, 0);
+           (1.0e-3 * numParticles)/fAvgSeconds, cpuTime, numParticles, 1, 0);
 
 }
 

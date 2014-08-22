@@ -21,6 +21,7 @@
 #include "thrust/for_each.h"
 #include "thrust/iterator/zip_iterator.h"
 #include "thrust/sort.h"
+#include "thrust/copy.h"
 
 #if USE_TEX
 #define FETCH(t, i) tex1Dfetch(t##Tex, i)
@@ -256,11 +257,15 @@ namespace gpusph
 	                 uint  *neighbors,
 	                 uint *gridParticleHash);
 	void sortParticles(uint *dGridParticleHash, uint *dGridParticleIndex, uint numParticles);
-    void reduceAccel(Real *ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
-    				 Real *velrhop,
-    				   Real *forcedt, // output: max time step for adaptive time stepping based on acceleration
-    				   Real *viscdt, // output: max time step based on viscous diffusion
-    				   uint numParticles);
+	Real *max_element(Real *data, uint begin, uint end);
+	Real *min_element(Real *data, uint begin, uint end);
+    void ace_mod(Real *ace_mod, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+    			 Real *ace_drhodt,
+    			 uint numParticles);
+    void soundSpeed(Real *velrhop,
+    				Real *soundSpeed,
+    				uint numParticles);
+
     Real get_time_step(Real *forcedt, Real *viscdt, uint numParticles);
 	void zero_acceleration(Real *ace_drhodt, uint numParticles);
 	void zero_ycomponent(Real *data, uint numParticles);
@@ -274,7 +279,7 @@ namespace gpusph
 								 uint  *type, // input: sorted particle type (e.g. fluid, boundary, etc.)
 								 uint numParticles);
 
-	Real cuda_max(Real *data, uint numElements);
+//	Real cuda_max(Real *data, uint numElements);
 
 	__device__ int cellExists(int3 cellPos);
 	__device__ int3 calcGridPos(Real3 p);
@@ -338,11 +343,14 @@ namespace gpusph
 					   Real *viscdt, // output: max time step for adaptive time stepping
 					   uint numParticles);
 	__global__
-	void reduceAccelD(Real4 *ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
-			   Real4 *velrhop,
-			   Real *forcedt, // output: max time step for adaptive time stepping based on acceleration
-			   Real *viscdt, // output: max time step based on viscous diffusion
+	void ace_modD(Real *ace_mod, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+			   Real4 *ace_drhodt,
 			   uint numParticles);
+
+   __global__
+	void soundSpeedD(Real4 *velrhop,
+					Real *soundSpeed,
+					uint numParticles);
 
 	__global__ void zero_accelerationD(Real4 *ace_drhodt);
 	__global__ void zero_ycomponentD(Real4 *data, uint numParticles);

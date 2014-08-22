@@ -28,7 +28,7 @@ class ParticleSystem
         ParticleSystem(const char *cfgFileName); // Constructor
         ~ParticleSystem(); // Delete particle system
 
-        Real update(Real &deltaTime); // Integrates particle system in time
+        Real update(); // Integrates particle system in time
         void loadCfg(const char *fileName); // Loads case parameters from Xml Config file
         void setDerivedInputs();
         void load(std::string config); // Loads initial particle distribution from input file
@@ -49,6 +49,7 @@ class ParticleSystem
         Real getPrintInterval() {return h_exec_params_.print_interval;}
         Real getSimulationDuration() {return h_exec_params_.simulation_duration;}
         uint getSheppardStep(){return h_exec_params_.density_renormalization_frequency;}
+        Real get_time_step(Real aceMax,Real viscDtMax,Real csMax);
 //        Real get_time_step();
 
     protected: // methods
@@ -67,6 +68,7 @@ class ParticleSystem
         Real *h_pospres_;              // particle positions and pressures
         Real *h_velrhop_;              // particle velocities and densities
         uint *h_particle_type_; // number identifying particle type (e.g. fluid, stationary boundary, moving boundary, etc.)
+        Real *h_spare_array_;
 
         // CPU grid sort data - used for dumping grid info to file
         uint  *h_particle_hash_; // bin number that particle is located in for grid search
@@ -87,12 +89,12 @@ class ParticleSystem
 		Real *d_sorted_velrhop_; // stores particle velocity and density data, sorted according to grid index
 		uint *d_sorted_type_; // stores particle type data, sorted according to grid index
 		Real *d_velxcor_; // velocity correction for xsph variant
+
         // Adaptive time step data
         Real *d_visc_dt_; // holds maximum dt value of each particle based on viscous considerations. (See Lui and Lui, 2003)
-        Real *d_force_dt_; // holds maximum dt value of each particle based on acceleration
-        Real *d_max_accel_; // holds maximum acceleration of all particles
-        Real *d_max_sound_speed_; // holds maximum sound speed of all particles
-        Real *d_norm_ace_; // Norm of particle acceleration: sqrt(a.x^2 + a.y^2 + a.z^2)
+        Real *d_ace_mod_; // Norm of particle acceleration: sqrt(a.x^2 + a.y^2 + a.z^2)
+        Real *d_soundSpeed_; // holds sound speed of all particles
+        Real *d_maxValue_; // holds max value of an array
 
         // Sheppard filter data
         Real *d_density_sum_; // density summation for each particle (rho(i) = Sum[ rho(j) * W_ij * Vol(j) ] for j = 1,2,...,N.

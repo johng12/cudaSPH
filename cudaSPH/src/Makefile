@@ -156,7 +156,7 @@ particleSystem_cuda.o: particleSystem_cuda.cu
 particles.o: particles.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-particleSystem.o: particleSystem.cpp
+particleSystem.o: particleSystem.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
 particles: particles.o particleSystem_cuda.o particleSystem.o tinyxml.o tinyxmlparser.o tinyxmlerror.o tinystr.o

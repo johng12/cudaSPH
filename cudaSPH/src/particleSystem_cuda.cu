@@ -302,30 +302,50 @@ namespace gpusph
                             thrust::device_ptr<uint>(dGridParticleIndex));
     }
 
-    void reduceAccel(Real *ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
-    				 Real *velrhop,
-    				   Real *forcedt, // output: max time step for adaptive time stepping based on acceleration
-    				   Real *viscdt, // output: max time step based on viscous diffusion
-    				   uint numParticles)
+    Real *max_element(Real *data, uint begin, uint end)
+    {
+//    	Real *h_max_value = (Real*) malloc ( sizeof(Real) );
+//
+//    	thrust::device_ptr<Real> d_max_value = thrust::max_element(thrust::device_ptr<Real>(data+begin),thrust::device_ptr<Real>(data+end));
+//    	thrust::copy(d_max_value , d_max_value  ,h_max_value );
+
+    	Real *h_max_value = thrust::max_element(data+begin,data+end);
+    	return h_max_value;
+    }
+
+    Real *min_element(Real *data, uint begin, uint end)
+    {
+    	Real *h_min_value = (Real*) malloc ( sizeof(Real) );
+
+    	thrust::device_ptr<Real> d_min_value = thrust::max_element(thrust::device_ptr<Real>(data+begin),thrust::device_ptr<Real>(data+end));
+    	thrust::copy(d_min_value , d_min_value  ,h_min_value );
+
+    	return h_min_value;
+    }
+
+    void ace_mod(Real *ace_mod, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+    			 Real *ace_drho_dt,
+    			 uint numParticles)
     {
     	// thread per particle
 		uint numThreads, numBlocks;
 		computeGridSize(numParticles, 64, numBlocks, numThreads);
 
-		reduceAccelD<<< numBlocks, numThreads >>>((Real4 *) ace_drhodt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
-												  (Real4 *) velrhop,
-		    				   	   	   	   	   	   forcedt, // output: max time step for adaptive time stepping based on acceleration
-												   viscdt, // output: max time step based on viscous diffusion
+		ace_modD<<< numBlocks, numThreads >>>((Real *) ace_mod, // output: a.x*a.x + a.y*a.y + a.z*a.z
+												  (Real4 *) ace_drho_dt, // input: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
 												   numParticles);
     }
-
-    Real get_time_step(Real *forcedt, Real *viscdt, uint numParticles)
+    void soundSpeed(Real *velrhop,
+    				Real *soundSpeed,
+    				uint numParticles)
     {
-    	Real deltaTime = 0.0;
-//    	Real *dt_cv = thrust::min_element(thrust::device_prt<double>(viscdt), thrust::device_prt<double>(viscdt) + numParticles);
-//    	Real *dt_f = thrust::min_element(thrust::device_prt<double>(forcedt), thrust::device_prt<double>(forcedt) + numParticles);
-//    	Real deltaTime = 0.3 * std::min(dt_cv,dt_f);
-    	return deltaTime;
+    	// thread per particle
+		uint numThreads, numBlocks;
+		computeGridSize(numParticles, 64, numBlocks, numThreads);
+
+		soundSpeedD<<< numBlocks, numThreads >>>((Real4 *) velrhop, // input: velocity and density values
+												  (Real *) soundSpeed, // output: particle sound speed
+												  numParticles);
     }
 
     void zero_acceleration(Real *ace_drhodt, uint numParticles)
@@ -513,6 +533,7 @@ namespace gpusph
     		Real robar = ( velrhop1.w + velrhop2.w ) * 0.5;
 			Real pi_visc = 0.0;
 			const Real dot=drx*dvx + dry*dvy + drz*dvz;
+			Real dot_rr2;
 
     		{//====== Kernel =====
     			const Real rad=sqrt(rr2);
@@ -546,14 +567,14 @@ namespace gpusph
     	    	    const Real csoun1 = velrhop1.w * sim_params.over_rhop0;
 					const Real csoun2 = velrhop2.w * sim_params.over_rhop0;
 					const Real cbar= sim_params.cs0 * ((csoun1 * csoun1 * csoun1)+ (csoun2 * csoun2 * csoun2) ) * 0.5;
-
-					const Real mu = sim_params.smoothing_length * dot/(rr2 + sim_params.epsilon);
+					dot_rr2 = dot/(rr2 + sim_params.epsilon);
+					const Real mu = sim_params.smoothing_length * dot_rr2;
 
 					pi_visc = (-sim_params.nu * cbar * mu / robar);
 
     			}
 
-    			//visc=max(dot_rr2,visc);  //ViscDt=max(dot/(rr2+Eta2),ViscDt); // <----- Reduction to only one value. Used for adaptive time stepping.
+    			visc=max(dot_rr2,visc); // <----- Reduction to only one value. Used for adaptive time stepping.
     	     }
 
     	    //===== XSPH correction =====
@@ -675,7 +696,7 @@ namespace gpusph
         Real4 pospres1 =pospres[index];
         Real4 velrhop1 = velrhop[index];
 
-        Real massp1,massp2;
+        Real massp1;
         uint hash1 = gridParticleHash[index];
 
         if (type[index] == FLUID)
@@ -745,9 +766,8 @@ namespace gpusph
         // write accelerations back to original unsorted location
         uint originalIndex = gridParticleIndex[index];
         ace_drhodt[originalIndex] = make_Real4(acep1,arp1);
-//        velxcor[originalIndex] = make_Real4(0.0, 0.0, 0.0,0.0);
         velxcor[originalIndex] = make_Real4(velcorr1,0.0);
-        viscdt[originalIndex] = visc;
+        if(visc > viscdt[originalIndex]) viscdt[originalIndex] = visc;
         neighbors[originalIndex] = neigh1;
     }
     }
@@ -770,26 +790,34 @@ namespace gpusph
     }
 
     __global__
-    void reduceAccelD(Real4 *ace_drhodt, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
-    				  Real4 *velrhop, // input: particle velocity and density
-    				   Real *forcedt, // output: max time step for adaptive time stepping
-    				   Real *viscdt,
-    				   uint numParticles)
+    void ace_modD(Real *ace_mod, // output: acceleration and drho_dt values (a.x,a.y,a.z,drho_dt)
+    			  Real4 *ace_drhodt, // input: particle velocity and density
+    			  uint numParticles)
 
     {
         uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
 
         if (index >= numParticles) return;
-        // Dt based on particle acceleration
-        Real fa = ace_drhodt[index].x*ace_drhodt[index].x + ace_drhodt[index].y*ace_drhodt[index].y + ace_drhodt[index].z*ace_drhodt[index].z;
-        Real mag_fa = sqrt(fa);
-        Real dt = sqrt(sim_params.smoothing_length/mag_fa);
-        forcedt[index] = dt;
 
-        // Dt based on viscous diffusion
-        const Real csound = sim_params.cs0*velrhop[index].w * sim_params.over_rhop0;
-        dt = sim_params.smoothing_length/(csound + viscdt[index]);
-        viscdt[index] = dt;
+        // Norm of particle acceleration
+        ace_mod[index] = ace_drhodt[index].x*ace_drhodt[index].x + ace_drhodt[index].y*ace_drhodt[index].y + ace_drhodt[index].z*ace_drhodt[index].z;
+
+    }
+
+    __global__
+    void soundSpeedD(Real4 *velrhop,
+    				Real *soundSpeed,
+    				uint numParticles)
+
+    {
+        uint index = __mul24(blockIdx.x,blockDim.x) + threadIdx.x;
+
+        if (index >= numParticles) return;
+
+        // Sound speed of particle
+        Real ovrhop = velrhop[index].w * sim_params.over_rhop0;
+        soundSpeed[index] = sim_params.cs0 * (ovrhop * ovrhop * ovrhop);
+
     }
 
     __global__
